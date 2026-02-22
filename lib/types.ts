@@ -199,6 +199,18 @@ export interface Note {
   employees?: Employee; // For employee info
 }
 
+export interface Event {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  start_at: string;
+  end_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export const CLIENT_STATUSES = ["lead", "customer", "archived"] as const;
 export const PROJECT_STATUSES = ["planned", "active", "done"] as const;
 export const OFFER_STATUSES = ["draft", "sent", "accepted", "rejected"] as const;
