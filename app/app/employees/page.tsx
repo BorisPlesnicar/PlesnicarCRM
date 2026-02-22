@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Employee } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -30,13 +30,7 @@ import { de } from "date-fns/locale";
 // Force dynamic rendering to prevent prerendering errors
 export const dynamic = 'force-dynamic';
 
-export default function EmployeesPageWrapper() {
-  return (
-    <Suspense>
-      <EmployeesPage />
-    </Suspense>
-  );
-}
+export default function EmployeesPage() {
 
 const EMPLOYEE_ROLES = [
   { value: "owner", label: "Unternehmensinhaber", icon: Crown, color: "text-yellow-500" },
