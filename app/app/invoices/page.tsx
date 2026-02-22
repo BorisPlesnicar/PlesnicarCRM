@@ -93,37 +93,39 @@ export default function InvoicesPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Rechnungen</h1>
-          <p className="text-muted-foreground mt-1">Verwalten Sie Ihre Rechnungen</p>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground">Rechnungen</h1>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">Verwalten Sie Ihre Rechnungen</p>
         </div>
         <Button
           onClick={() => router.push("/app/invoices/new")}
-          className="bg-primary text-primary-foreground hover:bg-red-700"
+          className="bg-primary text-primary-foreground hover:bg-red-700 text-sm sm:text-base"
+          size="sm"
         >
-          <Plus className="mr-2 h-4 w-4" />
-          Neue Rechnung
+          <Plus className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span className="hidden sm:inline">Neue Rechnung</span>
+          <span className="sm:hidden">Neu</span>
         </Button>
       </div>
 
       <Card className="border-border bg-card">
-        <CardContent className="pt-6">
-          <div className="flex gap-4 mb-6">
+        <CardContent className="pt-4 sm:pt-6">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-4 sm:mb-6">
             <div className="flex-1">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Suche nach Rechnungsnummer oder Kunde..."
+                  placeholder="Suche..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 text-sm sm:text-base"
                 />
               </div>
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full sm:w-40 text-sm sm:text-base">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -148,56 +150,120 @@ export default function InvoicesPage() {
                 : "Noch keine Rechnungen vorhanden"}
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border hover:bg-transparent">
-                  <TableHead>Rechnungsnummer</TableHead>
-                  <TableHead>Kunde</TableHead>
-                  <TableHead>Datum</TableHead>
-                  <TableHead>Fälligkeitsdatum</TableHead>
-                  <TableHead>Betrag</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Aktionen</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              {/* Desktop Table */}
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead>Rechnungsnummer</TableHead>
+                      <TableHead>Kunde</TableHead>
+                      <TableHead>Datum</TableHead>
+                      <TableHead>Fälligkeitsdatum</TableHead>
+                      <TableHead>Betrag</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Aktionen</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((invoice) => (
+                      <TableRow key={invoice.id} className="border-border">
+                        <TableCell className="font-medium">
+                          {invoice.invoice_number}
+                          {invoice.invoice_type && (
+                            <Badge variant="outline" className={`ml-2 ${invoice.invoice_type === "bau" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
+                              {invoice.invoice_type === "bau" ? "BAU" : "IT"}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {(invoice.clients as unknown as { name: string })?.name || "–"}
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(invoice.invoice_date), "dd.MM.yyyy", { locale: de })}
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(invoice.due_date), "dd.MM.yyyy", { locale: de })}
+                        </TableCell>
+                        <TableCell className="font-semibold">
+                          {formatCurrency(invoice.total_amount)}
+                          {invoice.is_partial_payment && (
+                            <span className="text-xs text-muted-foreground ml-1">
+                              (Teilanzahlung)
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={statusColors[invoice.status]}>
+                            {statusLabels[invoice.status]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => router.push(`/app/invoices/${invoice.id}`)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(invoice.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-400" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile Cards */}
+              <div className="md:hidden divide-y divide-border">
                 {filtered.map((invoice) => (
-                  <TableRow key={invoice.id} className="border-border">
-                    <TableCell className="font-medium">
-                      {invoice.invoice_number}
-                      {invoice.invoice_type && (
-                        <Badge variant="outline" className={`ml-2 ${invoice.invoice_type === "bau" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
-                          {invoice.invoice_type === "bau" ? "BAU" : "IT"}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {(invoice.clients as unknown as { name: string })?.name || "–"}
-                    </TableCell>
-                    <TableCell>
-                      {format(new Date(invoice.invoice_date), "dd.MM.yyyy", { locale: de })}
-                    </TableCell>
-                    <TableCell>
-                      {format(new Date(invoice.due_date), "dd.MM.yyyy", { locale: de })}
-                    </TableCell>
-                    <TableCell className="font-semibold">
-                      {formatCurrency(invoice.total_amount)}
-                      {invoice.is_partial_payment && (
-                        <span className="text-xs text-muted-foreground ml-1">
-                          (Teilanzahlung)
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={statusColors[invoice.status]}>
-                        {statusLabels[invoice.status]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                  <div
+                    key={invoice.id}
+                    className="p-4 space-y-2 active:bg-muted/50 transition-colors"
+                    onClick={() => router.push(`/app/invoices/${invoice.id}`)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h3 className="font-semibold text-foreground">{invoice.invoice_number}</h3>
+                          {invoice.invoice_type && (
+                            <Badge variant="outline" className={`text-xs ${invoice.invoice_type === "bau" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
+                              {invoice.invoice_type === "bau" ? "BAU" : "IT"}
+                            </Badge>
+                          )}
+                          <Badge variant="outline" className={`text-xs ${statusColors[invoice.status]}`}>
+                            {statusLabels[invoice.status]}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-1">
+                          {(invoice.clients as unknown as { name: string })?.name || "–"}
+                        </p>
+                        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                          <span>Datum: {format(new Date(invoice.invoice_date), "dd.MM.yyyy", { locale: de })}</span>
+                          <span>Fällig: {format(new Date(invoice.due_date), "dd.MM.yyyy", { locale: de })}</span>
+                        </div>
+                        <p className="text-lg font-semibold text-foreground mt-2">
+                          {formatCurrency(invoice.total_amount)}
+                          {invoice.is_partial_payment && (
+                            <span className="text-xs text-muted-foreground ml-1 font-normal">
+                              (Teilanzahlung)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 ml-2" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-8 w-8"
                           onClick={() => router.push(`/app/invoices/${invoice.id}`)}
                         >
                           <Eye className="h-4 w-4" />
@@ -205,16 +271,17 @@ export default function InvoicesPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-8 w-8 text-red-400"
                           onClick={() => handleDelete(invoice.id)}
                         >
-                          <Trash2 className="h-4 w-4 text-red-400" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

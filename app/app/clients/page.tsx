@@ -179,20 +179,22 @@ function ClientsPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Kunden</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Kunden</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">
             {clients.length} Kunden insgesamt
           </p>
         </div>
         <Button
           onClick={openNew}
-          className="bg-primary text-primary-foreground hover:bg-red-700"
+          className="bg-primary text-primary-foreground hover:bg-red-700 text-sm sm:text-base"
+          size="sm"
         >
-          <Plus className="mr-2 h-4 w-4" />
-          Neuer Kunde
+          <Plus className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          <span className="hidden sm:inline">Neuer Kunde</span>
+          <span className="sm:hidden">Neu</span>
         </Button>
       </div>
 
@@ -224,9 +226,10 @@ function ClientsPage() {
         </CardContent>
       </Card>
 
-      {/* Table */}
+      {/* Table - Mobile: Cards, Desktop: Table */}
       <Card className="border-border bg-card overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="border-border hover:bg-transparent">
@@ -323,6 +326,90 @@ function ClientsPage() {
               )}
             </TableBody>
           </Table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="md:hidden divide-y divide-border">
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              Keine Kunden gefunden
+            </div>
+          ) : (
+            filtered.map((client) => (
+              <div
+                key={client.id}
+                className="p-4 space-y-2 active:bg-muted/50 transition-colors"
+                onClick={() => router.push(`/app/clients/${client.id}`)}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-foreground truncate">{client.name}</h3>
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${statusColors[client.status]}`}
+                      >
+                        {statusLabels[client.status]}
+                      </Badge>
+                    </div>
+                    {client.customer_number && (
+                      <p className="text-xs text-muted-foreground mb-1">
+                        {client.customer_number}
+                      </p>
+                    )}
+                    {client.company && (
+                      <p className="text-sm text-muted-foreground truncate">{client.company}</p>
+                    )}
+                    {client.email && (
+                      <p className="text-xs text-muted-foreground truncate">{client.email}</p>
+                    )}
+                    {client.phone && (
+                      <p className="text-xs text-muted-foreground truncate">{client.phone}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-1 ml-2" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/app/clients/${client.id}`);
+                      }}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEdit(client);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(client.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </Card>
 

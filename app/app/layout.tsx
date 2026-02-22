@@ -169,31 +169,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Main Content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 lg:p-8">
           {children}
         </main>
-
-        {/* Mobile Bottom Nav */}
-        <nav className="flex items-center justify-around border-t border-border bg-sidebar py-2 md:hidden">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex flex-col items-center gap-0.5 px-2 py-1 text-xs transition-colors",
-                  isActive(item.href)
-                    ? "text-primary"
-                    : "text-muted-foreground"
-                )}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="truncate">{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
       </div>
     </div>
   );

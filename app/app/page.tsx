@@ -308,28 +308,30 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">
             Willkommen bei Plesnicar Solutions CRM
           </p>
         </div>
         <div className="flex gap-2">
           <Button
             onClick={() => router.push("/app/clients?new=1")}
-            className="bg-primary text-primary-foreground hover:bg-red-700"
+            className="bg-primary text-primary-foreground hover:bg-red-700 text-sm sm:text-base"
+            size="sm"
           >
             <Plus className="mr-2 h-4 w-4" />
-            Neuer Kunde
+            <span className="hidden sm:inline">Neuer Kunde</span>
+            <span className="sm:hidden">Neu</span>
           </Button>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {kpis.map((kpi) => {
           const Icon = kpi.icon;
           return (
@@ -338,19 +340,19 @@ export default function DashboardPage() {
               className="border-border bg-card hover:shadow-lg transition-shadow"
             >
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                   {kpi.title}
                 </CardTitle>
-                <div className={`p-2 rounded-lg ${kpi.bgColor}`}>
-                  <Icon className={`h-5 w-5 ${kpi.color}`} />
+                <div className={`p-1.5 sm:p-2 rounded-lg ${kpi.bgColor}`}>
+                  <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${kpi.color}`} />
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-foreground mb-1">
+                <div className="text-lg sm:text-2xl font-bold text-foreground mb-1">
                   {loading ? "..." : kpi.value}
                 </div>
-                <div className="flex items-center gap-1 text-xs text-green-400">
-                  <TrendingUp className="h-3 w-3" />
+                <div className="flex items-center gap-1 text-[10px] sm:text-xs text-green-400">
+                  <TrendingUp className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                   <span>{kpi.change}</span>
                 </div>
               </CardContent>
@@ -360,7 +362,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Revenue Chart */}
         <Card className="border-border bg-card">
           <CardHeader>
@@ -371,11 +373,11 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="h-[300px] flex items-center justify-center">
-                <div className="text-muted-foreground">Lädt...</div>
+              <div className="h-[200px] sm:h-[300px] flex items-center justify-center">
+                <div className="text-muted-foreground text-sm">Lädt...</div>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={200} className="sm:h-[300px]">
                 <LineChart data={data.revenueData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                   <XAxis
@@ -430,7 +432,7 @@ export default function DashboardPage() {
                 <div className="text-muted-foreground">Keine Daten</div>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={200} className="sm:h-[300px]">
                 <PieChart>
                   <Pie
                     data={data.projectStatusData}
@@ -611,41 +613,49 @@ export default function DashboardPage() {
 
       {/* Quick Actions */}
       <Card className="border-border bg-card">
-        <CardHeader>
-          <CardTitle>Schnellaktionen</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg sm:text-xl">Schnellaktionen</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
             <Button
               onClick={() => router.push("/app/clients?new=1")}
-              className="bg-primary text-primary-foreground hover:bg-red-700"
+              className="bg-primary text-primary-foreground hover:bg-red-700 text-sm"
+              size="sm"
             >
-              <Plus className="mr-2 h-4 w-4" />
-              Neuer Kunde
+              <Plus className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Neuer Kunde</span>
+              <span className="sm:hidden">Kunde</span>
             </Button>
             <Button
               onClick={() => router.push("/app/offers/new")}
               variant="outline"
-              className="border-border"
+              className="border-border text-sm"
+              size="sm"
             >
-              <FileText className="mr-2 h-4 w-4" />
-              Neues Angebot
+              <FileText className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Angebot</span>
+              <span className="sm:hidden">Angebot</span>
             </Button>
             <Button
               onClick={() => router.push("/app/time")}
               variant="outline"
-              className="border-border"
+              className="border-border text-sm"
+              size="sm"
             >
-              <Timer className="mr-2 h-4 w-4" />
-              Timer starten
+              <Timer className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Timer</span>
+              <span className="sm:hidden">Timer</span>
             </Button>
             <Button
               onClick={() => router.push("/app/projects")}
               variant="outline"
-              className="border-border"
+              className="border-border text-sm"
+              size="sm"
             >
-              <FolderKanban className="mr-2 h-4 w-4" />
-              Neues Projekt
+              <FolderKanban className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Projekt</span>
+              <span className="sm:hidden">Projekt</span>
             </Button>
           </div>
         </CardContent>
