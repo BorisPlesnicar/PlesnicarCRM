@@ -30,8 +30,6 @@ import { de } from "date-fns/locale";
 // Force dynamic rendering to prevent prerendering errors
 export const dynamic = 'force-dynamic';
 
-export default function EmployeesPage() {
-
 const EMPLOYEE_ROLES = [
   { value: "owner", label: "Unternehmensinhaber", icon: Crown, color: "text-yellow-500" },
   { value: "supporter", label: "Unterstützer", icon: UserCheck, color: "text-blue-500" },
@@ -109,7 +107,7 @@ function EmployeeCard({
   );
 }
 
-function EmployeesPage() {
+export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
