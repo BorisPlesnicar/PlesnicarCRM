@@ -31,7 +31,7 @@ const navItems = [
   { href: "/app/invoices", label: "Rechnungen", icon: Receipt },
   { href: "/app/time", label: "Zeiterfassung", icon: Clock },
   { href: "/app/transactions", label: "Einnahmen & Ausgaben", icon: Wallet },
-  { href: "/app/employees", label: "Mitarbeiter", icon: UserCircle },
+  { href: "/app/employees", label: "Team", icon: UserCircle },
   { href: "/app/notes", label: "Notizen", icon: StickyNote },
   { href: "/app/help", label: "Hilfe & Anleitung", icon: HelpCircle },
 ];

@@ -47,10 +47,12 @@ const getRoleInfo = (roleValue: string) => {
 
 function EmployeeCard({
   employee,
+  onView,
   onEdit,
   onDelete,
 }: {
   employee: Employee;
+  onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -58,7 +60,7 @@ function EmployeeCard({
   const Icon = roleInfo.icon;
 
   return (
-    <Card className="border-border bg-card hover:shadow-md transition-shadow w-52">
+    <Card className="border-border bg-card hover:shadow-md transition-shadow w-52 cursor-pointer" onClick={onView}>
       <CardContent className="pt-3 pb-2">
         <div className="flex flex-col items-center text-center space-y-2">
           {/* Profile Image */}
@@ -91,7 +93,7 @@ function EmployeeCard({
           </div>
 
           {/* Actions */}
-          <div className="flex gap-1 w-full mt-1">
+          <div className="flex gap-1 w-full mt-1" onClick={(e) => e.stopPropagation()}>
             <Button variant="ghost" size="sm" onClick={onEdit} className="h-6 px-2 flex-1">
               <Pencil className="h-3 w-3" />
             </Button>
@@ -114,6 +116,8 @@ function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [viewEmployee, setViewEmployee] = useState<Employee | null>(null);
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -131,7 +135,7 @@ function EmployeesPage() {
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
-      toast.error("Fehler beim Laden der Mitarbeiter", { description: error.message });
+      toast.error("Fehler beim Laden des Teams", { description: error.message });
     } else {
       setEmployees(data || []);
     }
@@ -150,6 +154,11 @@ function EmployeesPage() {
     setProfileImageUrl(null);
     setProfileImageFile(null);
     setDialogOpen(true);
+  }
+
+  function openView(employee: Employee) {
+    setViewEmployee(employee);
+    setViewDialogOpen(true);
   }
 
   function openEdit(employee: Employee) {
@@ -242,7 +251,7 @@ function EmployeesPage() {
         if (error) {
           toast.error("Fehler beim Aktualisieren", { description: error.message });
         } else {
-          toast.success("Mitarbeiter aktualisiert");
+          toast.success("Teammitglied aktualisiert");
           setDialogOpen(false);
           loadEmployees();
         }
@@ -257,7 +266,7 @@ function EmployeesPage() {
         if (error) {
           toast.error("Fehler beim Erstellen", { description: error.message });
         } else {
-          toast.success("Mitarbeiter erstellt");
+          toast.success("Teammitglied erstellt");
           setDialogOpen(false);
           loadEmployees();
         }
@@ -268,13 +277,13 @@ function EmployeesPage() {
   }
 
   async function handleDelete(employee: Employee) {
-    if (!confirm("Möchten Sie diesen Mitarbeiter wirklich löschen?")) return;
+    if (!confirm("Möchten Sie dieses Teammitglied wirklich löschen?")) return;
 
     const { error } = await supabase.from("employees").delete().eq("id", employee.id);
     if (error) {
       toast.error("Fehler beim Löschen", { description: error.message });
     } else {
-      toast.success("Mitarbeiter gelöscht");
+      toast.success("Teammitglied gelöscht");
       loadEmployees();
     }
   }
@@ -292,20 +301,20 @@ function EmployeesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Mitarbeiter</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Verwalten Sie Ihre Mitarbeiter</p>
+          <h1 className="text-2xl font-bold text-foreground">Team</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Verwalten Sie Ihr Team</p>
         </div>
         <Button onClick={openNew} size="sm" className="bg-primary text-primary-foreground hover:bg-red-700">
           <Plus className="mr-2 h-4 w-4" />
-          Neuer Mitarbeiter
+          Neues Teammitglied
         </Button>
       </div>
 
-      {/* Employees - Grouped by Role */}
+      {/* Team - Grouped by Role */}
       {employees.length === 0 ? (
         <Card className="border-border bg-card">
           <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">Noch keine Mitarbeiter vorhanden</p>
+            <p className="text-center text-muted-foreground">Noch keine Teammitglieder vorhanden</p>
           </CardContent>
         </Card>
       ) : (
@@ -324,6 +333,7 @@ function EmployeesPage() {
                     <EmployeeCard
                       key={employee.id}
                       employee={employee}
+                      onView={() => openView(employee)}
                       onEdit={() => openEdit(employee)}
                       onDelete={() => handleDelete(employee)}
                     />
@@ -346,6 +356,7 @@ function EmployeesPage() {
                     <EmployeeCard
                       key={employee.id}
                       employee={employee}
+                      onView={() => openView(employee)}
                       onEdit={() => openEdit(employee)}
                       onDelete={() => handleDelete(employee)}
                     />
@@ -368,6 +379,7 @@ function EmployeesPage() {
                     <EmployeeCard
                       key={employee.id}
                       employee={employee}
+                      onView={() => openView(employee)}
                       onEdit={() => openEdit(employee)}
                       onDelete={() => handleDelete(employee)}
                     />
@@ -378,11 +390,108 @@ function EmployeesPage() {
         </div>
       )}
 
-      {/* Dialog */}
+      {/* View Dialog */}
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Teammitglied Details</DialogTitle>
+          </DialogHeader>
+          {viewEmployee && (
+            <div className="space-y-6">
+              {/* Profile Image */}
+              <div className="flex flex-col items-center">
+                {viewEmployee.profile_image_url ? (
+                  <img
+                    src={viewEmployee.profile_image_url}
+                    alt={viewEmployee.name}
+                    className="w-32 h-32 rounded-full object-cover border-4 border-primary/20"
+                  />
+                ) : (
+                  <div className="w-32 h-32 rounded-full bg-muted flex items-center justify-center border-4 border-primary/20">
+                    <UserCircle className="h-16 w-16 text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+
+              {/* Details */}
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-muted-foreground">Name</Label>
+                  <p className="text-lg font-semibold text-foreground mt-1">{viewEmployee.name}</p>
+                </div>
+
+                <div>
+                  <Label className="text-muted-foreground">Rolle</Label>
+                  <div className="mt-1">
+                    {(() => {
+                      const roleInfo = getRoleInfo(viewEmployee.role);
+                      const Icon = roleInfo.icon;
+                      return (
+                        <div className={`flex items-center gap-2 ${roleInfo.color}`}>
+                          <Icon className="h-5 w-5" />
+                          <span className="font-medium text-foreground">{roleInfo.label}</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {viewEmployee.description && (
+                  <div>
+                    <Label className="text-muted-foreground">Beschreibung</Label>
+                    <p className="text-foreground mt-1">{viewEmployee.description}</p>
+                  </div>
+                )}
+
+                <div>
+                  <Label className="text-muted-foreground">Mitglied seit</Label>
+                  <p className="text-foreground mt-1">
+                    {format(new Date(viewEmployee.created_at), "dd.MM.yyyy", { locale: de })}
+                  </p>
+                </div>
+
+                {viewEmployee.updated_at && viewEmployee.updated_at !== viewEmployee.created_at && (
+                  <div>
+                    <Label className="text-muted-foreground">Zuletzt aktualisiert</Label>
+                    <p className="text-foreground mt-1">
+                      {format(new Date(viewEmployee.updated_at), "dd.MM.yyyy", { locale: de })}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
+              Schließen
+            </Button>
+            {viewEmployee && (
+              <>
+                <Button variant="outline" onClick={() => { setViewDialogOpen(false); openEdit(viewEmployee); }}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Bearbeiten
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setViewDialogOpen(false);
+                    handleDelete(viewEmployee);
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Löschen
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit/Create Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editEmployee ? "Mitarbeiter bearbeiten" : "Neuer Mitarbeiter"}</DialogTitle>
+            <DialogTitle>{editEmployee ? "Teammitglied bearbeiten" : "Neues Teammitglied"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {/* Profile Image Upload */}
