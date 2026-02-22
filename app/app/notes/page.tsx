@@ -27,6 +27,9 @@ import {
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
+// Force dynamic rendering to prevent prerendering errors
+export const dynamic = 'force-dynamic';
+
 export default function NotesPageWrapper() {
   return (
     <Suspense>

@@ -27,6 +27,9 @@ import { Plus, Pencil, Trash2, Loader2, UserCircle, Image as ImageIcon, X, Crown
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
+// Force dynamic rendering to prevent prerendering errors
+export const dynamic = 'force-dynamic';
+
 export default function EmployeesPageWrapper() {
   return (
     <Suspense>
