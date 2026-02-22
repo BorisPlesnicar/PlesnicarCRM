@@ -119,7 +119,14 @@ export default function ClientDetailPage() {
         <CardHeader>
           <div className="flex items-start justify-between">
             <div>
-              <CardTitle className="text-xl">{client.name}</CardTitle>
+              <div className="flex items-center gap-3 mb-1">
+                <CardTitle className="text-xl">{client.name}</CardTitle>
+                {client.customer_number && (
+                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+                    {client.customer_number}
+                  </Badge>
+                )}
+              </div>
               {client.company && (
                 <p className="text-muted-foreground">{client.company}</p>
               )}

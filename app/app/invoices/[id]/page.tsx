@@ -101,17 +101,90 @@ export default function InvoiceDetailPage() {
   async function updateStatus(newStatus: string) {
     if (!invoice) return;
     setUpdatingStatus(true);
-    const { error } = await supabase
-      .from("invoices")
-      .update({ status: newStatus })
-      .eq("id", invoice.id);
-    if (error) {
-      toast.error("Fehler", { description: error.message });
-    } else {
+    
+    try {
+      // Update invoice status
+      const { error: invoiceError } = await supabase
+        .from("invoices")
+        .update({ status: newStatus })
+        .eq("id", invoice.id);
+      
+      if (invoiceError) {
+        toast.error("Fehler", { description: invoiceError.message });
+        setUpdatingStatus(false);
+        return;
+      }
+
+      // If status is "paid", create income transaction
+      if (newStatus === "paid") {
+        // Check if transaction already exists for this invoice
+        const { data: existingTransactions, error: checkError } = await supabase
+          .from("transactions")
+          .select("id")
+          .eq("description", `Rechnung ${invoice.invoice_number}`)
+          .eq("type", "income");
+
+        if (checkError) {
+          console.error("Error checking existing transactions:", checkError);
+        }
+
+        // Only create transaction if it doesn't exist yet
+        if (!existingTransactions || existingTransactions.length === 0) {
+          const transactionData = {
+            type: "income" as const,
+            amount: invoice.total_amount,
+            description: `Rechnung ${invoice.invoice_number}`,
+            category: "Rechnung",
+            date: new Date().toISOString().split("T")[0],
+            notes: `Automatisch erstellt bei Bezahlung der Rechnung ${invoice.invoice_number}`,
+          };
+
+          console.log("Creating transaction:", transactionData);
+
+          const { data: newTransaction, error: transactionError } = await supabase
+            .from("transactions")
+            .insert(transactionData)
+            .select()
+            .single();
+
+          if (transactionError) {
+            console.error("Transaction creation error:", transactionError);
+            toast.error("Rechnung als bezahlt markiert, aber Transaktion konnte nicht erstellt werden", {
+              description: transactionError.message,
+            });
+          } else {
+            console.log("Transaction created successfully:", newTransaction);
+            toast.success("Rechnung als bezahlt markiert und Einnahme erstellt");
+          }
+        } else {
+          console.log("Transaction already exists for this invoice");
+          toast.success("Status aktualisiert (Transaktion existiert bereits)");
+        }
+      } else if (invoice.status === "paid" && newStatus !== "paid") {
+        // If status changes from "paid" to something else, remove the transaction
+        const { error: deleteError } = await supabase
+          .from("transactions")
+          .delete()
+          .eq("description", `Rechnung ${invoice.invoice_number}`)
+          .eq("type", "income");
+
+        if (deleteError) {
+          console.error("Error deleting transaction:", deleteError);
+          toast.warning("Status aktualisiert, aber zugehörige Transaktion konnte nicht entfernt werden");
+        } else {
+          toast.success("Status aktualisiert und zugehörige Einnahme entfernt");
+        }
+      } else {
+        toast.success("Status aktualisiert");
+      }
+
       setInvoice({ ...invoice, status: newStatus as Invoice["status"] });
-      toast.success("Status aktualisiert");
+    } catch (error) {
+      console.error("Unexpected error in updateStatus:", error);
+      toast.error("Unerwarteter Fehler beim Aktualisieren des Status");
+    } finally {
+      setUpdatingStatus(false);
     }
-    setUpdatingStatus(false);
   }
 
   if (loading) {
@@ -136,6 +209,11 @@ export default function InvoiceDetailPage() {
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
               <FileText className="h-6 w-6" />
               {invoice.invoice_number}
+              {invoice.invoice_type && (
+                <Badge variant="outline" className={invoice.invoice_type === "bau" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}>
+                  {invoice.invoice_type === "bau" ? "BAU" : "IT"}
+                </Badge>
+              )}
             </h1>
             <p className="text-sm text-muted-foreground">
               {client?.name} {client?.company ? `(${client.company})` : ""}

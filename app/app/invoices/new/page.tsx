@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -18,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { Loader2, ArrowLeft, Save, Plus, Trash2 } from "lucide-react";
+import { Loader2, ArrowLeft, Save, Plus, Trash2, Calculator } from "lucide-react";
 import { addDays, format } from "date-fns";
 
 export default function NewInvoicePage() {
@@ -42,8 +43,9 @@ export default function NewInvoicePage() {
   const [vatPercent, setVatPercent] = useState(0);
   const [isPartialPayment, setIsPartialPayment] = useState(false);
   const [partialPaymentOfTotal, setPartialPaymentOfTotal] = useState("");
+  const [invoiceType, setInvoiceType] = useState<"it" | "bau">("it");
 
-  // Items
+  // IT Items
   const [items, setItems] = useState<InvoiceItem[]>([
     {
       position: 1,
@@ -57,13 +59,33 @@ export default function NewInvoicePage() {
     },
   ]);
 
+  // BAU Items (dynamic)
+  const [bauItems, setBauItems] = useState<
+    Array<{ id: string; description: string; quantity: number; unit: string; price: number }>
+  >([{ id: "1", description: "", quantity: 1, unit: "Stk", price: 0 }]);
+
+  // Convert BAU items to InvoiceItem format for calculation
+  const bauItemsAsInvoiceItems = useMemo(() => {
+    return bauItems.map((item, idx) => ({
+      position: idx + 1,
+      description: item.description,
+      quantity: item.quantity,
+      unit: item.unit,
+      unit_price: item.price,
+      vat_percent: 0,
+      discount_percent: 0,
+      total: item.quantity * item.price,
+    }));
+  }, [bauItems]);
+
   // Calculations
   const calc = useMemo(() => {
-    const netAmount = items.reduce((sum, item) => sum + item.total, 0);
+    const itemsToUse = invoiceType === "it" ? items : bauItemsAsInvoiceItems;
+    const netAmount = itemsToUse.reduce((sum, item) => sum + item.total, 0);
     const vatAmount = netAmount * (vatPercent / 100);
     const totalAmount = netAmount + vatAmount;
     return { netAmount, vatAmount, totalAmount };
-  }, [items, vatPercent]);
+  }, [items, bauItemsAsInvoiceItems, invoiceType, vatPercent]);
 
   useEffect(() => {
     async function load() {
@@ -77,10 +99,25 @@ export default function NewInvoicePage() {
       setOffers(offersRes.data || []);
 
       // Auto-generate invoice number in format BP-2248-XX
-      const { count } = await supabase
+      // Find the highest existing invoice number suffix
+      const { data: existingInvoices } = await supabase
         .from("invoices")
-        .select("*", { count: "exact", head: true });
-      const nextSuffix = (count || 0) + 1;
+        .select("invoice_number")
+        .like("invoice_number", "BP-2248-%");
+      
+      let nextSuffix = 1;
+      if (existingInvoices && existingInvoices.length > 0) {
+        const suffixes = existingInvoices
+          .map((inv) => {
+            const match = inv.invoice_number.match(/BP-2248-(\d+)/);
+            return match ? parseInt(match[1], 10) : 0;
+          })
+          .filter((n) => n > 0);
+        nextSuffix = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 2;
+      } else {
+        // If no invoices exist, start at 02 (since 01 already exists)
+        nextSuffix = 2;
+      }
       setInvoiceNumber(`BP-2248-${String(nextSuffix).padStart(2, "0")}`);
 
       setLoading(false);
@@ -88,6 +125,16 @@ export default function NewInvoicePage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Update customer number when client changes
+  useEffect(() => {
+    if (clientId) {
+      const client = clients.find((c) => c.id === clientId);
+      if (client?.customer_number) {
+        setCustomerNumber(client.customer_number);
+      }
+    }
+  }, [clientId, clients]);
 
   // Update due date when invoice date or payment term changes
   useEffect(() => {
@@ -132,11 +179,40 @@ export default function NewInvoicePage() {
     setItems((prev) => prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, position: i + 1 })));
   }
 
+  // BAU functions
+  function addBauItem() {
+    setBauItems((prev) => [
+      ...prev,
+      { id: Date.now().toString(), description: "", quantity: 1, unit: "Stk", price: 0 },
+    ]);
+  }
+
+  function removeBauItem(id: string) {
+    setBauItems((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function updateBauItem(
+    id: string,
+    field: "description" | "quantity" | "unit" | "price",
+    value: string | number
+  ) {
+    setBauItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, [field]: value } : item
+      )
+    );
+  }
+
   // Load items from offer
   function loadFromOffer() {
     if (!offerId) return;
     const offer = offers.find((o) => o.id === offerId);
     if (!offer) return;
+
+    // Set invoice type based on offer type
+    if (offer.offer_type) {
+      setInvoiceType(offer.offer_type);
+    }
 
     // Load offer items
     supabase
@@ -146,17 +222,30 @@ export default function NewInvoicePage() {
       .order("position")
       .then(({ data }) => {
         if (data && data.length > 0) {
-          const invoiceItems: InvoiceItem[] = data.map((item, idx) => ({
-            position: idx + 1,
-            description: item.service_name,
-            quantity: 1,
-            unit: "Stk",
-            unit_price: item.net_total || 0,
-            vat_percent: offer.vat_percent || 0,
-            discount_percent: 0,
-            total: item.net_total || 0,
-          }));
-          setItems(invoiceItems);
+          if (offer.offer_type === "bau") {
+            // BAU: use as BAU items
+            const bauItemsData = data.map((item, idx) => ({
+              id: (idx + 1).toString(),
+              description: item.service_name,
+              quantity: 1,
+              unit: "Stk",
+              price: item.net_total || 0,
+            }));
+            setBauItems(bauItemsData);
+          } else {
+            // IT: use as IT items
+            const invoiceItems: InvoiceItem[] = data.map((item, idx) => ({
+              position: idx + 1,
+              description: item.service_name,
+              quantity: 1,
+              unit: "Stk",
+              unit_price: item.net_total || 0,
+              vat_percent: offer.vat_percent || 0,
+              discount_percent: 0,
+              total: item.net_total || 0,
+            }));
+            setItems(invoiceItems);
+          }
           setVatPercent(offer.vat_percent || 0);
           toast.success("Positionen vom Angebot übernommen");
         }
@@ -168,9 +257,19 @@ export default function NewInvoicePage() {
       toast.error("Bitte wählen Sie einen Kunden");
       return;
     }
-    if (items.length === 0 || items.every((i) => !i.description.trim())) {
-      toast.error("Bitte fügen Sie mindestens eine Position hinzu");
-      return;
+    
+    // Validate items based on invoice type
+    if (invoiceType === "it") {
+      if (items.length === 0 || items.every((i) => !i.description.trim())) {
+        toast.error("Bitte fügen Sie mindestens eine Position hinzu");
+        return;
+      }
+    } else {
+      // BAU
+      if (bauItems.length === 0 || bauItems.every((i) => !i.description.trim() || i.price <= 0)) {
+        toast.error("Bitte fügen Sie mindestens eine Position mit Beschreibung und Preis hinzu");
+        return;
+      }
     }
 
     setSaving(true);
@@ -188,6 +287,7 @@ export default function NewInvoicePage() {
         due_date: format(dueDate, "yyyy-MM-dd"),
         payment_term_days: paymentTermDays,
         customer_number: customerNumber || null,
+        invoice_type: invoiceType,
         net_amount: calc.netAmount,
         vat_amount: calc.vatAmount,
         total_amount: calc.totalAmount,
@@ -205,20 +305,38 @@ export default function NewInvoicePage() {
       return;
     }
 
-    // Insert items
-    const itemsToInsert = items
-      .filter((item) => item.description.trim())
-      .map((item) => ({
-        invoice_id: invoice.id,
-        position: item.position,
-        description: item.description,
-        quantity: item.quantity,
-        unit: item.unit,
-        unit_price: item.unit_price,
-        vat_percent: item.vat_percent,
-        discount_percent: item.discount_percent,
-        total: item.total,
-      }));
+    // Insert items - use appropriate items based on type
+    let itemsToInsert: any[] = [];
+    if (invoiceType === "it") {
+      itemsToInsert = items
+        .filter((item) => item.description.trim())
+        .map((item) => ({
+          invoice_id: invoice.id,
+          position: item.position,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unit_price,
+          vat_percent: item.vat_percent,
+          discount_percent: item.discount_percent,
+          total: item.total,
+        }));
+    } else {
+      // BAU
+      itemsToInsert = bauItems
+        .filter((item) => item.description.trim() && item.price > 0)
+        .map((item, idx) => ({
+          invoice_id: invoice.id,
+          position: idx + 1,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.price,
+          vat_percent: 0,
+          discount_percent: 0,
+          total: item.quantity * item.price,
+        }));
+    }
 
     if (itemsToInsert.length > 0) {
       const { error: itemsError } = await supabase
@@ -283,6 +401,18 @@ export default function NewInvoicePage() {
           )}
         </Button>
       </div>
+
+      {/* Invoice Type Tabs */}
+      <Card className="border-border bg-card">
+        <CardContent className="pt-6">
+          <Tabs value={invoiceType} onValueChange={(v) => setInvoiceType(v as "it" | "bau")}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="it">IT Rechnung</TabsTrigger>
+              <TabsTrigger value="bau">BAU Rechnung</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Column - Form */}
@@ -377,78 +507,180 @@ export default function NewInvoicePage() {
           </Card>
 
           {/* Items */}
-          <Card className="border-border bg-card">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Positionen</CardTitle>
-              <Button variant="outline" size="sm" onClick={addItem}>
-                <Plus className="mr-2 h-4 w-4" />
-                Position hinzufügen
-              </Button>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {items.map((item, index) => (
-                <div key={index} className="grid gap-4 sm:grid-cols-8 items-end p-4 border border-border rounded-lg">
-                  <div className="sm:col-span-3 space-y-2">
-                    <Label>Bezeichnung</Label>
-                    <Input
-                      value={item.description}
-                      onChange={(e) => updateItem(index, "description", e.target.value)}
-                      placeholder="z.B. Grafische Entwerfung einer Website"
-                    />
+          <Tabs value={invoiceType} onValueChange={(v) => setInvoiceType(v as "it" | "bau")}>
+            <TabsContent value="it" className="space-y-0">
+              <Card className="border-border bg-card">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5" />
+                    Positionen
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={addItem}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Position hinzufügen
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {items.map((item, index) => (
+                    <div key={index} className="grid gap-4 sm:grid-cols-8 items-end p-4 border border-border rounded-lg">
+                      <div className="sm:col-span-3 space-y-2">
+                        <Label>Bezeichnung</Label>
+                        <Input
+                          value={item.description}
+                          onChange={(e) => updateItem(index, "description", e.target.value)}
+                          placeholder="z.B. Grafische Entwerfung einer Website"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Anzahl</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={item.quantity}
+                          onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Einheit</Label>
+                        <Input
+                          value={item.unit}
+                          onChange={(e) => updateItem(index, "unit", e.target.value)}
+                          placeholder="Stk"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Einheitspreis</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={item.unit_price}
+                          onChange={(e) => updateItem(index, "unit_price", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Rabatt %</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={item.discount_percent}
+                          onChange={(e) => updateItem(index, "discount_percent", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Gesamt</Label>
+                        <div className="font-semibold">{formatCurrency(item.total)}</div>
+                      </div>
+                      <div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeItem(index)}
+                          className="text-red-400"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="bau" className="space-y-0">
+              <Card className="border-border bg-card">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5" />
+                    Leistungen
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    onClick={addBauItem}
+                    className="bg-primary text-primary-foreground hover:bg-red-700"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Zeile hinzufügen
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {bauItems.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50"
+                      >
+                        <div className="flex-shrink-0 pt-2 text-sm text-muted-foreground w-8">
+                          {idx + 1}.
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <Input
+                            placeholder="Leistungsbeschreibung..."
+                            value={item.description}
+                            onChange={(e) =>
+                              updateBauItem(item.id, "description", e.target.value)
+                            }
+                            className="bg-background"
+                          />
+                          <div className="flex gap-2 items-center">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              placeholder="Anzahl"
+                              value={item.quantity || ""}
+                              onChange={(e) =>
+                                updateBauItem(
+                                  item.id,
+                                  "quantity",
+                                  parseFloat(e.target.value) || 1
+                                )
+                              }
+                              className="bg-background w-24"
+                            />
+                            <Input
+                              placeholder="Einheit"
+                              value={item.unit}
+                              onChange={(e) =>
+                                updateBauItem(item.id, "unit", e.target.value)
+                              }
+                              className="bg-background w-24"
+                            />
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              placeholder="Preis (€)"
+                              value={item.price || ""}
+                              onChange={(e) =>
+                                updateBauItem(
+                                  item.id,
+                                  "price",
+                                  parseFloat(e.target.value) || 0
+                                )
+                              }
+                              className="bg-background w-32"
+                            />
+                            <span className="text-sm text-muted-foreground">
+                              = {formatCurrency((item.quantity || 1) * (item.price || 0))}
+                            </span>
+                          </div>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => removeBauItem(item.id)}
+                          className="flex-shrink-0 text-destructive hover:text-destructive"
+                          disabled={bauItems.length === 1}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                  <div className="space-y-2">
-                    <Label>Anzahl</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Einheit</Label>
-                    <Input
-                      value={item.unit}
-                      onChange={(e) => updateItem(index, "unit", e.target.value)}
-                      placeholder="Stk"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Einheitspreis</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={item.unit_price}
-                      onChange={(e) => updateItem(index, "unit_price", parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Rabatt %</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={item.discount_percent}
-                      onChange={(e) => updateItem(index, "discount_percent", parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Gesamt</Label>
-                    <div className="font-semibold">{formatCurrency(item.total)}</div>
-                  </div>
-                  <div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeItem(index)}
-                      className="text-red-400"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
 
         {/* Right Column - Summary */}

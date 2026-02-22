@@ -171,6 +171,11 @@ export default function OffersPage() {
                   >
                     <TableCell className="font-medium">
                       {offer.offer_number}
+                      {offer.offer_type && (
+                        <Badge variant="outline" className={`ml-2 ${offer.offer_type === "bau" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
+                          {offer.offer_type === "bau" ? "BAU" : "IT"}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {(offer.clients as unknown as { name: string })?.name || "–"}

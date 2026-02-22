@@ -149,10 +149,25 @@ function NewOfferPage() {
       setProjects(projectsRes.data || []);
 
       // Auto-generate offer number in format BPA-2248-XX
-      const { count } = await supabase
+      // Find the highest existing offer number suffix
+      const { data: existingOffers } = await supabase
         .from("offers")
-        .select("*", { count: "exact", head: true });
-      const nextSuffix = (count || 0) + 1;
+        .select("offer_number")
+        .like("offer_number", "BPA-2248-%");
+      
+      let nextSuffix = 1;
+      if (existingOffers && existingOffers.length > 0) {
+        const suffixes = existingOffers
+          .map((off) => {
+            const match = off.offer_number.match(/BPA-2248-(\d+)/);
+            return match ? parseInt(match[1], 10) : 0;
+          })
+          .filter((n) => n > 0);
+        nextSuffix = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 2;
+      } else {
+        // If no offers exist, start at 02 (since 01 already exists)
+        nextSuffix = 2;
+      }
       setOfferNumber(`BPA-2248-${String(nextSuffix).padStart(2, "0")}`);
 
       // Default valid_until = 30 days from now

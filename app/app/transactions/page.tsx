@@ -53,6 +53,7 @@ import {
 } from "recharts";
 
 const INCOME_CATEGORIES = [
+  "Rechnung",
   "Teilanzahlung",
   "Restzahlung",
   "Sonstige Einnahme",

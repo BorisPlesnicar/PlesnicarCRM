@@ -230,6 +230,7 @@ function ClientsPage() {
           <Table>
             <TableHeader>
               <TableRow className="border-border hover:bg-transparent">
+                <TableHead>Kundennummer</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead className="hidden sm:table-cell">Firma</TableHead>
                 <TableHead className="hidden md:table-cell">E-Mail</TableHead>
@@ -241,14 +242,14 @@ function ClientsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8">
+                  <TableCell colSpan={7} className="text-center py-8">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="text-center py-8 text-muted-foreground"
                   >
                     Keine Kunden gefunden
@@ -261,6 +262,9 @@ function ClientsPage() {
                     className="border-border cursor-pointer hover:bg-muted/50"
                     onClick={() => router.push(`/app/clients/${client.id}`)}
                   >
+                    <TableCell className="font-medium text-primary">
+                      {client.customer_number || "–"}
+                    </TableCell>
                     <TableCell className="font-medium">{client.name}</TableCell>
                     <TableCell className="hidden sm:table-cell">
                       {client.company}

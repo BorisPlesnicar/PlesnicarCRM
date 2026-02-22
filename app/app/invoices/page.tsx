@@ -163,7 +163,14 @@ export default function InvoicesPage() {
               <TableBody>
                 {filtered.map((invoice) => (
                   <TableRow key={invoice.id} className="border-border">
-                    <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
+                    <TableCell className="font-medium">
+                      {invoice.invoice_number}
+                      {invoice.invoice_type && (
+                        <Badge variant="outline" className={`ml-2 ${invoice.invoice_type === "bau" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"}`}>
+                          {invoice.invoice_type === "bau" ? "BAU" : "IT"}
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {(invoice.clients as unknown as { name: string })?.name || "–"}
                     </TableCell>

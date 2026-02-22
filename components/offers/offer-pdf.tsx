@@ -9,6 +9,7 @@ import {
   Image,
   StyleSheet,
   pdf,
+  Font,
 } from "@react-pdf/renderer";
 import { Offer, OfferItem, Client } from "@/lib/types";
 import { OfferCalculation } from "@/lib/calculations";
@@ -17,97 +18,119 @@ import { Download, X, Loader2 } from "lucide-react";
 
 const RED = "#DC2626";
 
+// Format number with German format (25.000,00)
+function formatNumberDE(value: number, decimals: number = 2): string {
+  return new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
+}
+
+// Use Times-Roman as default font (built-in, professional for documents)
+// Times-Roman is a classic serif font that looks professional in PDFs
+
 const s = StyleSheet.create({
   page: {
     paddingTop: 35,
     paddingBottom: 100,
     paddingHorizontal: 45,
-    fontSize: 9.5,
-    fontFamily: "Helvetica",
-    color: "#222",
+    fontSize: 10,
+    fontFamily: "Times-Roman",
+    color: "#1a1a1a",
+    backgroundColor: "#ffffff",
   },
   /* ---- HEADER / LOGO ---- */
   logo: {
-    width: 180,
+    width: 200,
+    height: 50,
     marginBottom: 18,
+    objectFit: "contain",
   },
   /* ---- TITLE ---- */
   title: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: 700,
-    marginBottom: 4,
-    color: "#111",
+    marginBottom: 5,
+    color: "#1a1a1a",
+    letterSpacing: 0.5,
   },
   titleUnderline: {
     width: "100%",
-    height: 2,
+    height: 3,
     backgroundColor: RED,
     marginBottom: 18,
   },
   /* ---- INFO BOX ---- */
   infoBox: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#e5e5e5",
     marginBottom: 18,
+    borderRadius: 2,
   },
   infoRow: {
     flexDirection: "row",
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#ddd",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e5e5",
   },
   infoLabel: {
-    width: 80,
-    padding: 6,
+    width: 85,
+    padding: 7,
     fontWeight: 700,
-    fontSize: 9,
+    fontSize: 8.5,
     backgroundColor: "#f9f9f9",
-    borderRightWidth: 0.5,
-    borderRightColor: "#ddd",
+    borderRightWidth: 1,
+    borderRightColor: "#e5e5e5",
+    color: "#1a1a1a",
   },
   infoValue: {
     flex: 1,
-    padding: 6,
+    padding: 7,
     fontSize: 9,
+    color: "#1a1a1a",
   },
   /* ---- SECTION HEADING ---- */
   sectionTitle: {
     fontSize: 11,
     fontWeight: 700,
     marginBottom: 8,
-    color: "#111",
+    color: "#1a1a1a",
+    letterSpacing: 0.3,
+    marginTop: 4,
   },
   /* ---- DESCRIPTION ---- */
   description: {
     fontSize: 9,
     lineHeight: 1.5,
-    marginBottom: 18,
+    marginBottom: 16,
     color: "#333",
   },
   /* ---- TABLE ---- */
   tableHeader: {
     flexDirection: "row",
     backgroundColor: RED,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 5,
   },
   tableHeaderCell: {
     color: "#fff",
     fontWeight: 700,
     fontSize: 9,
+    letterSpacing: 0.3,
   },
   tableRow: {
     flexDirection: "row",
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#ddd",
-    paddingVertical: 5,
-    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e5e5",
+    paddingVertical: 6,
+    paddingHorizontal: 5,
+    backgroundColor: "#ffffff",
   },
   tableRowAlt: {
     flexDirection: "row",
-    borderBottomWidth: 0.5,
-    borderBottomColor: "#ddd",
-    paddingVertical: 5,
-    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e5e5",
+    paddingVertical: 6,
+    paddingHorizontal: 5,
     backgroundColor: "#fafafa",
   },
   colPos: { width: "8%" },
@@ -119,36 +142,44 @@ const s = StyleSheet.create({
   extrasRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 2,
-    paddingHorizontal: 4,
+    paddingVertical: 3,
+    paddingHorizontal: 5,
+    marginBottom: 1,
   },
-  extrasLabel: { fontSize: 8.5, color: "#555" },
-  extrasValue: { fontSize: 9, fontWeight: 600 },
+  extrasLabel: { fontSize: 8.5, color: "#555", letterSpacing: 0.2 },
+  extrasValue: { fontSize: 9, fontWeight: 600, color: "#1a1a1a" },
   /* ---- HINT LINE ---- */
   hint: {
     fontSize: 7.5,
-    color: "#888",
+    color: "#666",
     marginTop: 8,
-    marginBottom: 2,
+    marginBottom: 3,
+    fontStyle: "italic",
+    lineHeight: 1.4,
   },
   /* ---- TOTAL ---- */
   totalRow: {
     flexDirection: "row",
     justifyContent: "flex-end",
     alignItems: "center",
-    marginTop: 4,
+    marginTop: 6,
     marginBottom: 18,
+    paddingTop: 10,
+    borderTopWidth: 2,
+    borderTopColor: "#e5e5e5",
   },
   totalLabel: {
     fontSize: 12,
     fontWeight: 700,
     color: RED,
     marginRight: 12,
+    letterSpacing: 0.5,
   },
   totalValue: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 700,
     color: RED,
+    letterSpacing: 0.5,
   },
   /* ---- TEXT BLOCKS ---- */
   textBlock: {
@@ -163,9 +194,9 @@ const s = StyleSheet.create({
     bottom: 25,
     left: 45,
     right: 45,
-    borderTopWidth: 1,
+    borderTopWidth: 3,
     borderTopColor: RED,
-    paddingTop: 8,
+    paddingTop: 10,
     flexDirection: "row",
     justifyContent: "space-between",
   },
@@ -173,25 +204,22 @@ const s = StyleSheet.create({
     width: "25%",
   },
   footerTitle: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 700,
-    marginBottom: 3,
-    color: "#333",
+    marginBottom: 5,
+    color: "#1a1a1a",
+    letterSpacing: 0.3,
   },
   footerText: {
-    fontSize: 6.5,
-    color: "#666",
+    fontSize: 7,
+    color: "#555",
     lineHeight: 1.5,
+    marginBottom: 2,
   },
 });
 
 function formatEur(value: number): string {
-  return (
-    value.toLocaleString("de-DE", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
+  return formatNumberDE(value, 2);
 }
 
 function formatDateDE(dateStr: string): string {
@@ -457,7 +485,7 @@ export default function OfferPDFWrapper({
   async function downloadPdf() {
     setGenerating(true);
     try {
-      const logoUrl = `${window.location.origin}/LogoTEXTB.png`;
+      const logoUrl = `${window.location.origin}/LogoTEXTBLACK.png`;
       const blob = await pdf(
         <OfferDocument
           offer={offer}

@@ -15,6 +15,7 @@ export interface Client {
   address: string;
   notes: string;
   status: "lead" | "customer" | "archived";
+  customer_number: string | null;
   created_at: string;
 }
 
@@ -140,6 +141,7 @@ export interface Invoice {
   due_date: string;
   payment_term_days: number;
   customer_number: string | null;
+  invoice_type?: "it" | "bau";
   net_amount: number;
   vat_amount: number;
   total_amount: number;
@@ -169,6 +171,32 @@ export interface InvoiceItem {
   vat_percent: number;
   discount_percent: number;
   total: number;
+}
+
+export type EmployeeRole = "owner" | "supporter" | "employee";
+
+export interface Employee {
+  id: string;
+  user_id: string;
+  name: string;
+  role: EmployeeRole;
+  description: string | null;
+  profile_image_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Note {
+  id: string;
+  user_id: string;
+  employee_id: string | null;
+  title: string;
+  description: string;
+  images: string[] | null;
+  created_at: string;
+  updated_at: string;
+  profiles?: Profile; // For author info
+  employees?: Employee; // For employee info
 }
 
 export const CLIENT_STATUSES = ["lead", "customer", "archived"] as const;

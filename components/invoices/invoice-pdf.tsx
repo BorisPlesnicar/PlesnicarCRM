@@ -19,14 +19,26 @@ import { de } from "date-fns/locale";
 
 const RED = "#DC2626";
 
+// Format number with German format (25.000,00)
+function formatNumberDE(value: number, decimals: number = 2): string {
+  return new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
+}
+
+// Use Times-Roman as default font (built-in, professional for documents)
+// Times-Roman is a classic serif font that looks professional in PDFs
+
 const s = StyleSheet.create({
   page: {
     paddingTop: 40,
     paddingBottom: 60,
     paddingHorizontal: 50,
     fontSize: 10,
-    fontFamily: "Helvetica",
-    color: "#222",
+    fontFamily: "Times-Roman",
+    color: "#1a1a1a",
+    backgroundColor: "#ffffff",
   },
   // Header
   header: {
@@ -37,21 +49,23 @@ const s = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontWeight: "bold",
+    fontWeight: 700,
     color: RED,
     marginBottom: 8,
+    letterSpacing: 0.5,
   },
   logoContainer: {
     alignItems: "flex-end",
+    justifyContent: "flex-start",
   },
   logo: {
-    width: 120,
-    height: 30,
+    width: 200,
+    height: 50,
     objectFit: "contain",
   },
   headerLine: {
     width: "100%",
-    height: 2,
+    height: 3,
     backgroundColor: RED,
     marginBottom: 20,
   },
@@ -59,46 +73,83 @@ const s = StyleSheet.create({
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 25,
+    marginBottom: 20,
   },
   senderInfo: {
-    width: "45%",
+    width: "50%",
+    paddingRight: 15,
+    paddingTop: 0,
   },
-  invoiceInfo: {
+  invoiceInfoBox: {
     width: "45%",
-    alignItems: "flex-end",
+    borderWidth: 1,
+    borderColor: "#e5e5e5",
+    backgroundColor: "#f9f9f9",
+    padding: 12,
+    borderRadius: 2,
+  },
+  invoiceInfoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+    paddingBottom: 4,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#e0e0e0",
+  },
+  invoiceInfoRowLast: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 0,
+    paddingBottom: 0,
+    borderBottomWidth: 0,
   },
   infoLabel: {
-    fontSize: 9,
+    fontSize: 8.5,
     color: "#666",
-    marginBottom: 2,
+    letterSpacing: 0.2,
   },
   infoValue: {
     fontSize: 10,
-    fontWeight: "bold",
-    marginBottom: 8,
+    fontWeight: 600,
+    color: "#1a1a1a",
+    textAlign: "right",
+  },
+  infoValueBold: {
+    fontSize: 10.5,
+    fontWeight: 700,
+    color: "#1a1a1a",
+    textAlign: "right",
   },
   // Recipient
   recipient: {
-    marginBottom: 25,
+    marginBottom: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e5e5",
   },
   recipientLabel: {
-    fontSize: 9,
+    fontSize: 8.5,
     color: "#666",
-    marginBottom: 4,
+    marginBottom: 5,
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
   },
   recipientName: {
     fontSize: 11,
-    fontWeight: "bold",
-    marginBottom: 2,
+    fontWeight: 700,
+    marginBottom: 3,
+    color: "#1a1a1a",
   },
   recipientAddress: {
-    fontSize: 10,
+    fontSize: 9.5,
     lineHeight: 1.4,
+    color: "#333",
   },
   // Table
   table: {
-    marginBottom: 20,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#e5e5e5",
   },
   tableHeader: {
     flexDirection: "row",
@@ -108,19 +159,30 @@ const s = StyleSheet.create({
   },
   tableHeaderText: {
     color: "#fff",
-    fontSize: 9,
-    fontWeight: "bold",
+    fontSize: 8.5,
+    fontWeight: 700,
+    letterSpacing: 0.3,
   },
   tableRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
-    paddingVertical: 8,
+    borderBottomColor: "#e5e5e5",
+    paddingVertical: 7,
     paddingHorizontal: 6,
+    backgroundColor: "#ffffff",
+  },
+  tableRowAlt: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e5e5",
+    paddingVertical: 7,
+    paddingHorizontal: 6,
+    backgroundColor: "#fafafa",
   },
   tableCell: {
     fontSize: 9,
-    color: "#222",
+    color: "#1a1a1a",
+    lineHeight: 1.3,
   },
   colBezeichnung: { width: "35%" },
   colAnzahl: { width: "8%", textAlign: "right" },
@@ -132,35 +194,41 @@ const s = StyleSheet.create({
   // Totals
   totals: {
     alignItems: "flex-end",
-    marginBottom: 20,
+    marginBottom: 18,
     width: "100%",
+    marginTop: 8,
   },
   totalRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    width: 200,
-    marginBottom: 4,
-    paddingRight: 10,
+    width: 250,
+    marginBottom: 5,
+    paddingRight: 12,
   },
   totalLabel: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: "#666",
+    letterSpacing: 0.2,
   },
   totalValue: {
     fontSize: 10,
-    fontWeight: "bold",
+    fontWeight: 600,
+    color: "#1a1a1a",
   },
   totalFinal: {
-    fontSize: 14,
-    fontWeight: "bold",
+    fontSize: 15,
+    fontWeight: 700,
     color: RED,
+    letterSpacing: 0.5,
   },
   // Legal Note
   legalNote: {
-    fontSize: 8,
+    fontSize: 7.5,
     color: "#666",
     marginTop: 15,
-    marginBottom: 20,
+    marginBottom: 18,
+    fontStyle: "italic",
+    lineHeight: 1.4,
   },
   // Footer
   footerBar: {
@@ -168,27 +236,30 @@ const s = StyleSheet.create({
     height: 3,
     backgroundColor: RED,
     marginBottom: 15,
-    marginTop: 20,
+    marginTop: 18,
   },
   footer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    fontSize: 8,
+    fontSize: 7.5,
     color: "#666",
+    paddingTop: 12,
   },
   footerColumn: {
     width: "30%",
   },
   footerTitle: {
-    fontSize: 9,
+    fontSize: 9.5,
     fontWeight: "bold",
-    marginBottom: 4,
-    color: "#222",
+    marginBottom: 6,
+    color: "#1a1a1a",
+    letterSpacing: 0.3,
   },
   footerText: {
     fontSize: 8,
-    lineHeight: 1.4,
-    marginBottom: 2,
+    lineHeight: 1.5,
+    marginBottom: 3,
+    color: "#555",
   },
 });
 
@@ -212,7 +283,7 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
             <Text style={s.title}>Rechnung</Text>
           </View>
           <View style={s.logoContainer}>
-            <Image src="/LogoTEXTB.png" style={s.logo} />
+            <Image src="/LogoTEXTBLACK.png" style={s.logo} />
           </View>
         </View>
         <View style={s.headerLine} />
@@ -220,31 +291,31 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
         {/* Sender / Invoice Info Row */}
         <View style={s.infoRow}>
           <View style={s.senderInfo}>
-            <Text style={s.infoValue}>Boris Plesnicar e.U</Text>
-            <Text style={s.tableCell}>Hartriegelstraße 12</Text>
-            <Text style={s.tableCell}>3550 Langenlois, Österreich</Text>
+            <Text style={[s.infoValue, { fontSize: 11, marginBottom: 4, fontWeight: 700, textAlign: "left" }]}>Boris Plesnicar e.U</Text>
+            <Text style={[s.tableCell, { marginBottom: 2 }]}>Hartriegelstraße 12</Text>
+            <Text style={[s.tableCell, { marginBottom: 2 }]}>3550 Langenlois, Österreich</Text>
             <Text style={s.tableCell}>0664/4678382 / 0676/3206308</Text>
           </View>
-          <View style={s.invoiceInfo}>
-            <View>
+          <View style={s.invoiceInfoBox}>
+            <View style={s.invoiceInfoRow}>
               <Text style={s.infoLabel}>Rechnungsdatum:</Text>
               <Text style={s.infoValue}>{format(invoiceDate, "dd.MM.yyyy", { locale: de })}</Text>
             </View>
-            <View>
+            <View style={s.invoiceInfoRow}>
               <Text style={s.infoLabel}>Rechnungsnummer:</Text>
               <Text style={s.infoValue}>{invoice.invoice_number}</Text>
             </View>
-            <View>
+            <View style={s.invoiceInfoRow}>
               <Text style={s.infoLabel}>Kundennummer:</Text>
               <Text style={s.infoValue}>{invoice.customer_number || "–"}</Text>
             </View>
-            <View>
+            <View style={s.invoiceInfoRow}>
               <Text style={s.infoLabel}>Zahlungsziel:</Text>
               <Text style={s.infoValue}>{invoice.payment_term_days} Tage</Text>
             </View>
-            <View>
+            <View style={s.invoiceInfoRowLast}>
               <Text style={s.infoLabel}>Fälligkeitsdatum:</Text>
-              <Text style={s.infoValue}>{format(dueDate, "dd.MM.yyyy", { locale: de })}</Text>
+              <Text style={s.infoValueBold}>{format(dueDate, "dd.MM.yyyy", { locale: de })}</Text>
             </View>
           </View>
         </View>
@@ -270,15 +341,15 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
             <Text style={[s.tableHeaderText, s.colGesamt]}>Gesamt</Text>
           </View>
           {/* Rows */}
-          {items.map((item) => (
-            <View key={item.id || item.position} style={s.tableRow}>
+          {items.map((item, index) => (
+            <View key={item.id || item.position} style={index % 2 === 0 ? s.tableRow : s.tableRowAlt}>
               <Text style={[s.tableCell, s.colBezeichnung]}>{item.description}</Text>
-              <Text style={[s.tableCell, s.colAnzahl]}>{item.quantity.toFixed(2)}</Text>
+              <Text style={[s.tableCell, s.colAnzahl]}>{formatNumberDE(item.quantity, 2)}</Text>
               <Text style={[s.tableCell, s.colEinheit]}>{item.unit}</Text>
-              <Text style={[s.tableCell, s.colEinheitspreis]}>€ {item.unit_price.toFixed(2).replace(".", ",")}</Text>
+              <Text style={[s.tableCell, s.colEinheitspreis]}>€ {formatNumberDE(item.unit_price, 2)}</Text>
               <Text style={[s.tableCell, s.colUst]}>{item.vat_percent.toFixed(0)}%</Text>
-              <Text style={[s.tableCell, s.colRabatt]}>{item.discount_percent > 0 ? `${item.discount_percent.toFixed(2)}%` : "0,00%"}</Text>
-              <Text style={[s.tableCell, s.colGesamt]}>{item.total.toFixed(2).replace(".", ",")} €</Text>
+              <Text style={[s.tableCell, s.colRabatt]}>{item.discount_percent > 0 ? `${formatNumberDE(item.discount_percent, 2)}%` : "0,00%"}</Text>
+              <Text style={[s.tableCell, s.colGesamt]}>{formatNumberDE(item.total, 2)} €</Text>
             </View>
           ))}
         </View>
@@ -287,15 +358,15 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
         <View style={s.totals}>
           <View style={s.totalRow}>
             <Text style={s.totalLabel}>Nettobetrag:</Text>
-            <Text style={s.totalValue}>{invoice.net_amount.toFixed(2).replace(".", ",")} €</Text>
+            <Text style={s.totalValue}>{formatNumberDE(invoice.net_amount, 2)} €</Text>
           </View>
           <View style={s.totalRow}>
             <Text style={s.totalLabel}>Umsatzsteuer:</Text>
-            <Text style={s.totalValue}>{invoice.vat_amount.toFixed(2).replace(".", ",")} €</Text>
+            <Text style={s.totalValue}>{formatNumberDE(invoice.vat_amount, 2)} €</Text>
           </View>
-          <View style={[s.totalRow, { marginTop: 8, borderTopWidth: 1, borderTopColor: "#ddd", paddingTop: 8 }]}>
-            <Text style={s.totalLabel}>Rechnungsbetrag:</Text>
-            <Text style={[s.totalValue, s.totalFinal]}>{invoice.total_amount.toFixed(2).replace(".", ",")} €</Text>
+          <View style={[s.totalRow, { marginTop: 10, borderTopWidth: 2, borderTopColor: "#ddd", paddingTop: 10 }]}>
+            <Text style={[s.totalLabel, { fontSize: 10.5, fontWeight: 700 }]}>Rechnungsbetrag:</Text>
+            <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(invoice.total_amount, 2)} €</Text>
           </View>
         </View>
 

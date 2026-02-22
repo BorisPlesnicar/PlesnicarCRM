@@ -14,6 +14,10 @@ import {
   Menu,
   X,
   Wallet,
+  Receipt,
+  StickyNote,
+  HelpCircle,
+  UserCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -24,8 +28,12 @@ const navItems = [
   { href: "/app/clients", label: "Kunden", icon: Users },
   { href: "/app/projects", label: "Projekte", icon: FolderKanban },
   { href: "/app/offers", label: "Angebote", icon: FileText },
+  { href: "/app/invoices", label: "Rechnungen", icon: Receipt },
   { href: "/app/time", label: "Zeiterfassung", icon: Clock },
   { href: "/app/transactions", label: "Einnahmen & Ausgaben", icon: Wallet },
+  { href: "/app/employees", label: "Mitarbeiter", icon: UserCircle },
+  { href: "/app/notes", label: "Notizen", icon: StickyNote },
+  { href: "/app/help", label: "Hilfe & Anleitung", icon: HelpCircle },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
