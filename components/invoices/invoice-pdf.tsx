@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Document,
   Page,
@@ -14,6 +14,7 @@ import { Invoice, InvoiceItem, Client } from "@/lib/types";
 import { formatCurrency } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
 import { Download, X, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -263,13 +264,14 @@ const s = StyleSheet.create({
 });
 
 interface InvoicePDFProps {
-  invoice: Invoice;
+  invoice: Invoice | Partial<Invoice>; // Allow partial for drafts
   items: InvoiceItem[];
   client: Client | null;
   onClose: () => void;
+  previewMode?: boolean; // If true, show preview instead of download
 }
 
-function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "onClose">) {
+function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "onClose" | "previewMode">) {
   const invoiceDate = invoice.invoice_date ? new Date(invoice.invoice_date) : new Date();
   const dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date();
 
@@ -302,7 +304,7 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
             </View>
             <View style={s.invoiceInfoRow}>
               <Text style={s.infoLabel}>Rechnungsnummer:</Text>
-              <Text style={s.infoValue}>{invoice.invoice_number}</Text>
+              <Text style={s.infoValue}>{invoice.invoice_number || "DRAFT"}</Text>
             </View>
             <View style={s.invoiceInfoRow}>
               <Text style={s.infoLabel}>Kundennummer:</Text>
@@ -310,7 +312,7 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
             </View>
             <View style={s.invoiceInfoRow}>
               <Text style={s.infoLabel}>Zahlungsziel:</Text>
-              <Text style={s.infoValue}>{invoice.payment_term_days} Tage</Text>
+              <Text style={s.infoValue}>{invoice.payment_term_days || 14} Tage</Text>
             </View>
             <View style={s.invoiceInfoRowLast}>
               <Text style={s.infoLabel}>Fälligkeitsdatum:</Text>
@@ -357,15 +359,15 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
         <View style={s.totals}>
           <View style={s.totalRow}>
             <Text style={s.totalLabel}>Nettobetrag:</Text>
-            <Text style={s.totalValue}>{formatNumberDE(invoice.net_amount, 2)} €</Text>
+            <Text style={s.totalValue}>{formatNumberDE(invoice.net_amount || 0, 2)} €</Text>
           </View>
           <View style={s.totalRow}>
             <Text style={s.totalLabel}>Umsatzsteuer:</Text>
-            <Text style={s.totalValue}>{formatNumberDE(invoice.vat_amount, 2)} €</Text>
+            <Text style={s.totalValue}>{formatNumberDE(invoice.vat_amount || 0, 2)} €</Text>
           </View>
           <View style={[s.totalRow, { marginTop: 10, borderTopWidth: 2, borderTopColor: "#ddd", paddingTop: 10 }]}>
             <Text style={[s.totalLabel, { fontSize: 10.5, fontWeight: 700 }]}>Rechnungsbetrag:</Text>
-            <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(invoice.total_amount, 2)} €</Text>
+            <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(invoice.total_amount || 0, 2)} €</Text>
           </View>
         </View>
 
@@ -403,8 +405,9 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
   );
 }
 
-export default function InvoicePDF({ invoice, items, client, onClose }: InvoicePDFProps) {
+export default function InvoicePDF({ invoice, items, client, onClose, previewMode = false }: InvoicePDFProps) {
   const [generating, setGenerating] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   async function handleDownload() {
     setGenerating(true);
@@ -413,50 +416,96 @@ export default function InvoicePDF({ invoice, items, client, onClose }: InvoiceP
       const asPdf = pdf(doc);
       const blob = await asPdf.toBlob();
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `Rechnung_${invoice.invoice_number}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      
+      if (previewMode) {
+        setPreviewUrl(url);
+      } else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `Rechnung_${invoice.invoice_number || "Draft"}.pdf`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (error) {
       console.error("Error generating PDF:", error);
+      toast.error("Fehler beim Generieren der PDF");
     } finally {
       setGenerating(false);
     }
   }
 
+  // Auto-generate preview in preview mode
+  useEffect(() => {
+    if (previewMode && !previewUrl && !generating) {
+      handleDownload();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewMode, invoice, items]);
+
+  // Cleanup preview URL
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="relative w-full max-w-4xl bg-background border border-border rounded-lg shadow-xl p-6 m-4 max-h-[90vh] overflow-auto">
+      <div className="relative w-full max-w-5xl bg-background border border-border rounded-lg shadow-xl p-6 m-4 max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-foreground">Rechnung PDF</h2>
+          <h2 className="text-2xl font-bold text-foreground">
+            {previewMode ? "PDF-Vorschau" : "Rechnung PDF"}
+          </h2>
           <div className="flex gap-2">
-            <Button
-              onClick={handleDownload}
-              disabled={generating}
-              className="bg-primary text-primary-foreground hover:bg-red-700"
-            >
-              {generating ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generiere...
-                </>
-              ) : (
-                <>
-                  <Download className="mr-2 h-4 w-4" />
-                  PDF herunterladen
-                </>
-              )}
-            </Button>
+            {!previewMode && (
+              <Button
+                onClick={handleDownload}
+                disabled={generating}
+                className="bg-primary text-primary-foreground hover:bg-red-700"
+              >
+                {generating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generiere...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    PDF herunterladen
+                  </>
+                )}
+              </Button>
+            )}
             <Button variant="outline" onClick={onClose}>
               <X className="mr-2 h-4 w-4" />
               Schließen
             </Button>
           </div>
         </div>
-        <div className="text-sm text-muted-foreground">
-          Die PDF wird generiert. Klicken Sie auf "PDF herunterladen" um die Datei zu speichern.
-        </div>
+        {previewMode ? (
+          <div className="flex-1 overflow-auto border border-border rounded-lg bg-muted/50">
+            {previewUrl ? (
+              <iframe
+                src={previewUrl}
+                className="w-full h-full min-h-[600px]"
+                title="PDF Preview"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[600px]">
+                <div className="text-center">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">PDF wird generiert...</p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">
+            Die PDF wird generiert. Klicken Sie auf "PDF herunterladen" um die Datei zu speichern.
+          </div>
+        )}
       </div>
     </div>
   );

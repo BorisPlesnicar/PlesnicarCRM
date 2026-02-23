@@ -121,6 +121,8 @@ export default function LoginPage() {
       setAttempts(0);
       localStorage.removeItem("login_attempts");
       localStorage.removeItem("login_lockout_until");
+      // Set welcome flag for dashboard
+      localStorage.setItem("show_welcome", Date.now().toString());
       toast.success("Erfolgreich eingeloggt");
       router.push("/app");
       router.refresh();

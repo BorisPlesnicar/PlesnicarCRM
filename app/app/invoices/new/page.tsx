@@ -19,8 +19,14 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { Loader2, ArrowLeft, Save, Plus, Trash2, Calculator } from "lucide-react";
+import { Invoice } from "@/lib/types";
+
+const InvoicePDF = dynamic(() => import("@/components/invoices/invoice-pdf"), {
+  ssr: false,
+});
+import { Loader2, ArrowLeft, Save, Plus, Trash2, Calculator, Eye } from "lucide-react";
 import { addDays, format } from "date-fns";
+import dynamic from "next/dynamic";
 
 export default function NewInvoicePage() {
   const router = useRouter();
@@ -31,6 +37,7 @@ export default function NewInvoicePage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Form state
   const [clientId, setClientId] = useState("");
@@ -86,6 +93,52 @@ export default function NewInvoicePage() {
     const totalAmount = netAmount + vatAmount;
     return { netAmount, vatAmount, totalAmount };
   }, [items, bauItemsAsInvoiceItems, invoiceType, vatPercent]);
+
+  // Create draft invoice for preview
+  const draftInvoice = useMemo((): Partial<Invoice> => {
+    const selectedClient = clients.find((c) => c.id === clientId);
+    const dueDate = addDays(new Date(invoiceDate), paymentTermDays);
+    
+    return {
+      id: "draft",
+      invoice_number: invoiceNumber || "DRAFT",
+      invoice_date: invoiceDate,
+      due_date: format(dueDate, "yyyy-MM-dd"),
+      payment_term_days: paymentTermDays,
+      customer_number: customerNumber || null,
+      invoice_type: invoiceType,
+      net_amount: calc.netAmount,
+      vat_amount: calc.vatAmount,
+      total_amount: calc.totalAmount,
+      vat_percent: vatPercent,
+      is_partial_payment: isPartialPayment,
+      partial_payment_of_total: isPartialPayment && partialPaymentOfTotal ? parseFloat(partialPaymentOfTotal) : null,
+      status: "draft",
+      currency: "EUR",
+      client_id: clientId,
+      project_id: projectId && projectId !== "none" ? projectId : null,
+      offer_id: offerId && offerId !== "none" ? offerId : null,
+    } as Partial<Invoice>;
+  }, [
+    clientId,
+    invoiceNumber,
+    invoiceDate,
+    paymentTermDays,
+    customerNumber,
+    invoiceType,
+    calc,
+    vatPercent,
+    isPartialPayment,
+    partialPaymentOfTotal,
+    projectId,
+    offerId,
+  ]);
+
+  // Get items for preview
+  const previewItems = useMemo(() => {
+    const itemsToUse = invoiceType === "it" ? items : bauItemsAsInvoiceItems;
+    return itemsToUse.filter((item) => item.description.trim());
+  }, [items, bauItemsAsInvoiceItems, invoiceType]);
 
   useEffect(() => {
     async function load() {
@@ -386,23 +439,43 @@ export default function NewInvoicePage() {
           </Button>
           <h1 className="text-2xl font-bold text-foreground">Neue Rechnung</h1>
         </div>
-        <Button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-primary text-primary-foreground hover:bg-red-700"
-        >
-          {saving ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Speichere...
-            </>
-          ) : (
-            <>
-              <Save className="mr-2 h-4 w-4" />
-              Speichern
-            </>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => {
+              if (!clientId) {
+                toast.error("Bitte wählen Sie einen Kunden für die Vorschau");
+                return;
+              }
+              if (previewItems.length === 0) {
+                toast.error("Bitte fügen Sie mindestens eine Position hinzu");
+                return;
+              }
+              setShowPreview(true);
+            }}
+            variant="outline"
+            disabled={!clientId || previewItems.length === 0}
+          >
+            <Eye className="mr-2 h-4 w-4" />
+            Vorschau
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-primary text-primary-foreground hover:bg-red-700"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Speichere...
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                Speichern
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Invoice Type Tabs */}
@@ -741,6 +814,17 @@ export default function NewInvoicePage() {
           </Card>
         </div>
       </div>
+
+      {/* PDF Preview Modal */}
+      {showPreview && (
+        <InvoicePDF
+          invoice={draftInvoice}
+          items={previewItems}
+          client={clients.find((c) => c.id === clientId) || null}
+          onClose={() => setShowPreview(false)}
+          previewMode={true}
+        />
+      )}
     </div>
   );
 }

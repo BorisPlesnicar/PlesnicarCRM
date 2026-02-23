@@ -40,6 +40,7 @@ import {
 } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth, addDays, differenceInDays, isAfter, isBefore } from "date-fns";
 import { de } from "date-fns/locale";
+import { toast } from "sonner";
 
 interface DashboardData {
   openLeads: number;
@@ -107,6 +108,26 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const supabase = createClient();
+
+  // Check for welcome message after login
+  useEffect(() => {
+    const showWelcome = localStorage.getItem("show_welcome");
+    if (showWelcome) {
+      const welcomeTime = parseInt(showWelcome, 10);
+      const now = Date.now();
+      // Show welcome if it was set in the last 5 seconds (fresh login)
+      if (now - welcomeTime < 5000) {
+        setTimeout(() => {
+          toast.success("Willkommen zurück!", {
+            description: "Schön, dass du wieder da bist!",
+            duration: 4000,
+          });
+        }, 800);
+      }
+      localStorage.removeItem("show_welcome");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -348,6 +369,41 @@ export default function DashboardPage() {
         openInvoicesCount: openInvoicesCountRes.count || 0,
       });
       setLoading(false);
+
+      // Show notifications
+      const overdueInvoices = openInvoicesList.filter((inv) => {
+        const dueDate = new Date(inv.due_date);
+        return inv.status === "overdue" || dueDate < now;
+      });
+
+      if (overdueInvoices.length > 0) {
+        setTimeout(() => {
+          toast.warning(`Es gibt ${overdueInvoices.length} überfällige Rechnung${overdueInvoices.length > 1 ? "en" : ""}`, {
+            description: "Bitte prüfen Sie die offenen Rechnungen.",
+            action: {
+              label: "Anzeigen",
+              onClick: () => router.push("/app/invoices?status=overdue"),
+            },
+            duration: 5000,
+          });
+        }, 500);
+      }
+
+      // Show upcoming deadlines reminder
+      const upcomingIn3Days = deadlines.filter((d) => {
+        const deadlineDate = new Date(d.date);
+        const daysUntil = differenceInDays(deadlineDate, now);
+        return daysUntil >= 0 && daysUntil <= 3;
+      });
+
+      if (upcomingIn3Days.length > 0) {
+        setTimeout(() => {
+          toast.info(`Anstehende Termine: ${upcomingIn3Days.length}`, {
+            description: upcomingIn3Days.slice(0, 3).map((d) => d.title).join(", "),
+            duration: 5000,
+          });
+        }, overdueInvoices.length > 0 ? 2000 : 500);
+      }
     }
     loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
