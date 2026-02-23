@@ -26,8 +26,7 @@ function formatNumberDE(value: number, decimals: number = 2): string {
   }).format(value);
 }
 
-// Use Times-Roman as default font (built-in, professional for documents)
-// Times-Roman is a classic serif font that looks professional in PDFs
+// Use Helvetica as default font (built-in, clean and modern)
 
 const s = StyleSheet.create({
   page: {
@@ -35,7 +34,7 @@ const s = StyleSheet.create({
     paddingBottom: 100,
     paddingHorizontal: 45,
     fontSize: 10,
-    fontFamily: "Times-Roman",
+    fontFamily: "Helvetica",
     color: "#1a1a1a",
     backgroundColor: "#ffffff",
   },

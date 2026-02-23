@@ -30,9 +30,14 @@ import {
   Loader2,
   Pencil,
   FileText,
+  Mail,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  Send,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { de } from "date-fns/locale";
 
 const InvoicePDF = dynamic(() => import("@/components/invoices/invoice-pdf"), {
@@ -65,6 +70,7 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showPdf, setShowPdf] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [creatingReminder, setCreatingReminder] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -245,6 +251,20 @@ export default function InvoiceDetailPage() {
             <Pencil className="mr-2 h-4 w-4" />
             Bearbeiten
           </Button>
+          {client?.email && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const subject = encodeURIComponent(`Rechnung ${invoice.invoice_number}`);
+                const body = encodeURIComponent(`Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie die Rechnung ${invoice.invoice_number}.\n\nMit freundlichen Grüßen`);
+                window.location.href = `mailto:${client.email}?subject=${subject}&body=${body}`;
+              }}
+              className="border-border"
+            >
+              <Mail className="mr-2 h-4 w-4" />
+              E-Mail
+            </Button>
+          )}
           <Button
             onClick={() => setShowPdf(true)}
             className="bg-primary text-primary-foreground hover:bg-red-700"
@@ -362,6 +382,162 @@ export default function InvoiceDetailPage() {
               <span className="text-primary">{formatCurrency(invoice.total_amount)}</span>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Timeline */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle>Historie</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Created */}
+            <div className="flex gap-4">
+              <div className="flex flex-col items-center">
+                <div className="rounded-full bg-primary/10 p-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                </div>
+                <div className="w-0.5 h-full bg-border mt-2" />
+              </div>
+              <div className="flex-1 pb-4">
+                <div className="font-medium text-sm">Rechnung erstellt</div>
+                <div className="text-xs text-muted-foreground">
+                  {format(new Date(invoice.created_at), "dd.MM.yyyy HH:mm", { locale: de })}
+                </div>
+              </div>
+            </div>
+
+            {/* Status changes */}
+            {invoice.status !== "draft" && (
+              <div className="flex gap-4">
+                <div className="flex flex-col items-center">
+                  <div className="rounded-full bg-yellow-500/10 p-2">
+                    <Send className="h-4 w-4 text-yellow-400" />
+                  </div>
+                  <div className="w-0.5 h-full bg-border mt-2" />
+                </div>
+                <div className="flex-1 pb-4">
+                  <div className="font-medium text-sm">Status: {statusLabels[invoice.status]}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {invoice.updated_at !== invoice.created_at
+                      ? format(new Date(invoice.updated_at), "dd.MM.yyyy HH:mm", { locale: de })
+                      : format(new Date(invoice.created_at), "dd.MM.yyyy HH:mm", { locale: de })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Paid status */}
+            {invoice.status === "paid" && (
+              <div className="flex gap-4">
+                <div className="flex flex-col items-center">
+                  <div className="rounded-full bg-green-500/10 p-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-400" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium text-sm">Rechnung bezahlt</div>
+                  <div className="text-xs text-muted-foreground">
+                    {format(new Date(invoice.updated_at), "dd.MM.yyyy HH:mm", { locale: de })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick Actions */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle>Aktionen</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
+          {invoice.status !== "paid" && (
+            <Button
+              onClick={() => updateStatus("paid")}
+              disabled={updatingStatus}
+              className="bg-green-600 text-white hover:bg-green-700"
+            >
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              Als bezahlt markieren
+            </Button>
+          )}
+          {(invoice.status === "sent" || invoice.status === "overdue") && (
+            <Button
+              onClick={async () => {
+                setCreatingReminder(true);
+                try {
+                  // Create reminder invoice
+                  const reminderNumber = `${invoice.invoice_number}-Mahnung`;
+                  const { data: reminderInvoice, error: reminderError } = await supabase
+                    .from("invoices")
+                    .insert({
+                      client_id: invoice.client_id,
+                      project_id: invoice.project_id,
+                      offer_id: invoice.offer_id,
+                      invoice_number: reminderNumber,
+                      invoice_date: new Date().toISOString().split("T")[0],
+                      due_date: addDays(new Date(), 7).toISOString().split("T")[0],
+                      payment_term_days: 7,
+                      customer_number: invoice.customer_number,
+                      invoice_type: invoice.invoice_type || "it",
+                      net_amount: invoice.net_amount,
+                      vat_amount: invoice.vat_amount,
+                      total_amount: invoice.total_amount,
+                      vat_percent: invoice.vat_percent,
+                      is_partial_payment: false,
+                      partial_payment_of_total: null,
+                      status: "draft",
+                      notes: `Mahnung für Rechnung ${invoice.invoice_number}`,
+                    })
+                    .select()
+                    .single();
+
+                  if (reminderError) {
+                    toast.error("Fehler beim Erstellen der Mahnung", {
+                      description: reminderError.message,
+                    });
+                  } else {
+                    // Copy items
+                    const { error: itemsError } = await supabase
+                      .from("invoice_items")
+                      .insert(
+                        items.map((item) => ({
+                          invoice_id: reminderInvoice.id,
+                          position: item.position,
+                          description: item.description,
+                          quantity: item.quantity,
+                          unit: item.unit,
+                          unit_price: item.unit_price,
+                          vat_percent: item.vat_percent,
+                          discount_percent: item.discount_percent,
+                          total: item.total,
+                        }))
+                      );
+
+                    if (itemsError) {
+                      toast.error("Mahnung erstellt, aber Positionen konnten nicht kopiert werden");
+                    } else {
+                      toast.success("Mahnung erstellt");
+                      router.push(`/app/invoices/${reminderInvoice.id}`);
+                    }
+                  }
+                } catch (error) {
+                  toast.error("Fehler beim Erstellen der Mahnung");
+                } finally {
+                  setCreatingReminder(false);
+                }
+              }}
+              disabled={creatingReminder}
+              variant="outline"
+              className="border-orange-500/20 text-orange-400 hover:bg-orange-500/10"
+            >
+              <AlertCircle className="mr-2 h-4 w-4" />
+              {creatingReminder ? "Erstelle..." : "Mahnung erzeugen"}
+            </Button>
+          )}
         </CardContent>
       </Card>
 

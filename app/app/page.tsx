@@ -19,6 +19,8 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Receipt,
+  Mail,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/calculations";
 import {
@@ -36,7 +38,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
+import { format, subMonths, startOfMonth, endOfMonth, addDays, differenceInDays, isAfter, isBefore } from "date-fns";
 import { de } from "date-fns/locale";
 
 interface DashboardData {
@@ -64,6 +66,22 @@ interface DashboardData {
     status: string;
     client_name: string;
   }>;
+  openInvoices: Array<{
+    id: string;
+    invoice_number: string;
+    total_amount: number;
+    due_date: string;
+    client_name: string;
+    status: string;
+  }>;
+  upcomingDeadlines: Array<{
+    id: string;
+    type: "offer" | "project";
+    title: string;
+    date: string;
+    status: string;
+  }>;
+  openInvoicesCount: number;
 }
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
@@ -82,6 +100,9 @@ export default function DashboardPage() {
     projectStatusData: [],
     recentOffers: [],
     recentProjects: [],
+    openInvoices: [],
+    upcomingDeadlines: [],
+    openInvoicesCount: 0,
   });
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -129,6 +150,8 @@ export default function DashboardPage() {
         projectStatuses,
         recentOffersRes,
         recentProjectsRes,
+        openInvoicesRes,
+        openInvoicesCountRes,
       ] = await Promise.all([
         supabase
           .from("clients")
@@ -172,6 +195,18 @@ export default function DashboardPage() {
           .select("*, clients(name)")
           .order("created_at", { ascending: false })
           .limit(5),
+        // Open invoices (sent or overdue)
+        supabase
+          .from("invoices")
+          .select("id, invoice_number, total_amount, due_date, status, clients(name)")
+          .in("status", ["sent", "overdue"])
+          .order("due_date", { ascending: true })
+          .limit(10),
+        // Count open invoices
+        supabase
+          .from("invoices")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["sent", "overdue"]),
       ]);
 
       // Revenue = sum of incomes (transactions) this month
@@ -224,6 +259,77 @@ export default function DashboardPage() {
         client_name: (p.clients as any)?.name || "–",
       }));
 
+      // Open invoices - get from the query result
+      const openInvoicesList = (openInvoicesRes.data || []).map((inv: any) => ({
+        id: inv.id,
+        invoice_number: inv.invoice_number,
+        total_amount: inv.total_amount,
+        due_date: inv.due_date,
+        client_name: (inv.clients as any)?.name || "–",
+        status: inv.status,
+      }));
+
+      // Get upcoming deadlines
+      const deadlines: Array<{ id: string; type: "offer" | "project"; title: string; date: string; status: string }> = [];
+
+      // Offers: date + 30 days (expiry)
+      const { data: allOffersData } = await supabase
+        .from("offers")
+        .select("id, offer_number, date, status")
+        .in("status", ["sent", "accepted"])
+        .limit(20);
+
+      (allOffersData || []).forEach((offer: any) => {
+        if (offer.date) {
+          const expiryDate = addDays(new Date(offer.date), 30);
+          if (isAfter(expiryDate, now) && isBefore(expiryDate, addDays(now, 60))) {
+            deadlines.push({
+              id: offer.id,
+              type: "offer",
+              title: offer.offer_number,
+              date: expiryDate.toISOString().split("T")[0],
+              status: offer.status,
+            });
+          }
+        }
+      });
+
+      // Projects: start_date and end_date
+      const { data: allProjectsData } = await supabase
+        .from("projects")
+        .select("id, title, start_date, end_date, status")
+        .in("status", ["planned", "active"])
+        .limit(20);
+
+      (allProjectsData || []).forEach((project: any) => {
+        if (project.start_date) {
+          const startDate = new Date(project.start_date);
+          if (isAfter(startDate, now) && isBefore(startDate, addDays(now, 30))) {
+            deadlines.push({
+              id: project.id,
+              type: "project",
+              title: project.title,
+              date: project.start_date,
+              status: project.status,
+            });
+          }
+        }
+        if (project.end_date) {
+          const endDate = new Date(project.end_date);
+          if (isAfter(endDate, now) && isBefore(endDate, addDays(now, 30))) {
+            deadlines.push({
+              id: project.id,
+              type: "project",
+              title: `${project.title} (Ende)`,
+              date: project.end_date,
+              status: project.status,
+            });
+          }
+        }
+      });
+
+      deadlines.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
       setData({
         openLeads: leads.count || 0,
         activeProjects: projects.count || 0,
@@ -237,6 +343,9 @@ export default function DashboardPage() {
         projectStatusData,
         recentOffers,
         recentProjects,
+        openInvoices: openInvoicesList,
+        upcomingDeadlines: deadlines.slice(0, 10),
+        openInvoicesCount: openInvoicesCountRes.count || 0,
       });
       setLoading(false);
     }
@@ -268,6 +377,14 @@ export default function DashboardPage() {
       color: "text-yellow-400",
       bgColor: "bg-yellow-500/10",
       change: "+3",
+    },
+    {
+      title: "Offene Rechnungen",
+      value: data.openInvoicesCount.toString(),
+      icon: Receipt,
+      color: "text-orange-400",
+      bgColor: "bg-orange-500/10",
+      change: "",
     },
     {
       title: "Einnahmen (Monat)",
@@ -331,7 +448,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-6">
         {kpis.map((kpi) => {
           const Icon = kpi.icon;
           return (
@@ -351,10 +468,12 @@ export default function DashboardPage() {
                 <div className="text-lg sm:text-2xl font-bold text-foreground mb-1">
                   {loading ? "..." : kpi.value}
                 </div>
-                <div className="flex items-center gap-1 text-[10px] sm:text-xs text-green-400">
-                  <TrendingUp className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
-                  <span>{kpi.change}</span>
-                </div>
+                {kpi.change && (
+                  <div className="flex items-center gap-1 text-[10px] sm:text-xs text-green-400">
+                    <TrendingUp className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                    <span>{kpi.change}</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -459,6 +578,151 @@ export default function DashboardPage() {
                   />
                 </PieChart>
               </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Open Invoices & Deadlines Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Open Invoices Widget */}
+        <Card className="border-border bg-card">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-orange-400" />
+              Offene Rechnungen
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/app/invoices")}
+            >
+              Alle anzeigen
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="text-muted-foreground text-sm">Lädt...</div>
+            ) : data.openInvoices.length === 0 ? (
+              <div className="text-muted-foreground text-sm">
+                Keine offenen Rechnungen
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {data.openInvoices.map((invoice) => {
+                  const dueDate = new Date(invoice.due_date);
+                  const daysUntilDue = differenceInDays(dueDate, new Date());
+                  let badgeClass = "bg-green-500/10 text-green-400 border-green-500/20";
+                  let statusText = "OK";
+                  
+                  if (invoice.status === "overdue" || daysUntilDue < 0) {
+                    badgeClass = "bg-red-500/10 text-red-400 border-red-500/20";
+                    statusText = "Überfällig";
+                  } else if (daysUntilDue <= 7) {
+                    badgeClass = "bg-yellow-500/10 text-yellow-400 border-yellow-500/20";
+                    statusText = `${daysUntilDue} Tage`;
+                  } else {
+                    statusText = `${daysUntilDue} Tage`;
+                  }
+
+                  return (
+                    <div
+                      key={invoice.id}
+                      className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                      onClick={() => router.push(`/app/invoices/${invoice.id}`)}
+                    >
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{invoice.invoice_number}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {invoice.client_name}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-semibold">
+                          {formatCurrency(invoice.total_amount)}
+                        </span>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge
+                            variant="outline"
+                            className={`${badgeClass} text-xs`}
+                          >
+                            {statusText}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {format(dueDate, "dd.MM.yyyy", { locale: de })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Upcoming Deadlines Widget */}
+        <Card className="border-border bg-card">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-blue-400" />
+              Nächste Termine
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/app/events")}
+            >
+              Kalender
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="text-muted-foreground text-sm">Lädt...</div>
+            ) : data.upcomingDeadlines.length === 0 ? (
+              <div className="text-muted-foreground text-sm">
+                Keine anstehenden Termine
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {data.upcomingDeadlines.map((deadline) => {
+                  const deadlineDate = new Date(deadline.date);
+                  const daysUntil = differenceInDays(deadlineDate, new Date());
+                  
+                  return (
+                    <div
+                      key={`${deadline.type}-${deadline.id}`}
+                      className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                      onClick={() => {
+                        if (deadline.type === "offer") {
+                          router.push(`/app/offers/${deadline.id}`);
+                        } else {
+                          router.push(`/app/projects/${deadline.id}`);
+                        }
+                      }}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          {deadline.type === "offer" ? (
+                            <FileText className="h-4 w-4 text-yellow-400" />
+                          ) : (
+                            <FolderKanban className="h-4 w-4 text-green-400" />
+                          )}
+                          <span className="font-medium text-sm">{deadline.title}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {deadline.type === "offer" ? "Angebot" : "Projekt"} • {daysUntil > 0 ? `in ${daysUntil} Tagen` : "heute"}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-medium">
+                          {format(deadlineDate, "dd.MM.yyyy", { locale: de })}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </CardContent>
         </Card>

@@ -205,7 +205,8 @@ export default function NewInvoicePage() {
 
   // Load items from offer
   function loadFromOffer() {
-    if (!offerId) return;
+    // "none" = explizit kein Angebot gewählt
+    if (!offerId || offerId === "none") return;
     const offer = offers.find((o) => o.id === offerId);
     if (!offer) return;
 
@@ -280,8 +281,10 @@ export default function NewInvoicePage() {
       .from("invoices")
       .insert({
         client_id: clientId,
-        project_id: projectId || null,
-        offer_id: offerId || null,
+        // "none" oder leerer String sollen als NULL gespeichert werden,
+        // sonst versucht Postgres, 'none' als UUID zu parsen.
+        project_id: !projectId || projectId === "none" ? null : projectId,
+        offer_id: !offerId || offerId === "none" ? null : offerId,
         invoice_number: invoiceNumber,
         invoice_date: invoiceDate,
         due_date: format(dueDate, "yyyy-MM-dd"),

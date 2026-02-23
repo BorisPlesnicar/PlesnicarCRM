@@ -24,8 +24,16 @@ import {
   FolderKanban,
   FileText,
   Loader2,
+  Receipt,
+  DollarSign,
+  Save,
+  Edit,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/calculations";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { format } from "date-fns";
+import { de } from "date-fns/locale";
 
 const statusLabels: Record<string, string> = {
   lead: "Lead",
@@ -38,6 +46,9 @@ const statusLabels: Record<string, string> = {
   sent: "Gesendet",
   accepted: "Angenommen",
   rejected: "Abgelehnt",
+  paid: "Bezahlt",
+  overdue: "Überfällig",
+  cancelled: "Storniert",
 };
 
 const statusColors: Record<string, string> = {
@@ -51,6 +62,9 @@ const statusColors: Record<string, string> = {
   sent: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
   accepted: "bg-green-500/10 text-green-400 border-green-500/20",
   rejected: "bg-red-500/10 text-red-400 border-red-500/20",
+  paid: "bg-green-500/10 text-green-400 border-green-500/20",
+  overdue: "bg-red-500/10 text-red-400 border-red-500/20",
+  cancelled: "bg-gray-500/10 text-gray-300 border-gray-500/20",
 };
 
 export default function ClientDetailPage() {
@@ -60,12 +74,16 @@ export default function ClientDetailPage() {
   const [client, setClient] = useState<Client | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState("");
+  const [notesChanged, setNotesChanged] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
 
   useEffect(() => {
     async function load() {
       const id = params.id as string;
-      const [clientRes, projectsRes, offersRes] = await Promise.all([
+      const [clientRes, projectsRes, offersRes, invoicesRes] = await Promise.all([
         supabase.from("clients").select("*").eq("id", id).single(),
         supabase
           .from("projects")
@@ -77,6 +95,12 @@ export default function ClientDetailPage() {
           .select("*")
           .eq("client_id", id)
           .order("created_at", { ascending: false }),
+        supabase
+          .from("invoices")
+          .select("id, invoice_number, invoice_date, total_amount, status, due_date")
+          .eq("client_id", id)
+          .order("created_at", { ascending: false })
+          .limit(5),
       ]);
 
       if (clientRes.error) {
@@ -87,11 +111,31 @@ export default function ClientDetailPage() {
       setClient(clientRes.data);
       setProjects(projectsRes.data || []);
       setOffers(offersRes.data || []);
+      setInvoices(invoicesRes.data || []);
+      setNotes(clientRes.data.notes || "");
       setLoading(false);
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
+
+  async function saveNotes() {
+    if (!client) return;
+    setSavingNotes(true);
+    const { error } = await supabase
+      .from("clients")
+      .update({ notes })
+      .eq("id", client.id);
+
+    if (error) {
+      toast.error("Fehler beim Speichern", { description: error.message });
+    } else {
+      toast.success("Notizen gespeichert");
+      setClient({ ...client, notes });
+      setNotesChanged(false);
+    }
+    setSavingNotes(false);
+  }
 
   if (loading) {
     return (
@@ -162,11 +206,128 @@ export default function ClientDetailPage() {
               <span>{client.address}</span>
             </div>
           )}
-          {client.notes && (
-            <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">
-              {client.notes}
-            </p>
-          )}
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Notizen</Label>
+              {notesChanged && (
+                <Button
+                  size="sm"
+                  onClick={saveNotes}
+                  disabled={savingNotes}
+                  className="h-7"
+                >
+                  {savingNotes ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <>
+                      <Save className="mr-1 h-3 w-3" />
+                      Speichern
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+            <Textarea
+              value={notes}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                setNotesChanged(e.target.value !== (client?.notes || ""));
+              }}
+              placeholder="Notizen zum Kunden..."
+              className="min-h-[100px] resize-none"
+            />
+            {client.notes && !notesChanged && (
+              <p className="text-xs text-muted-foreground">
+                Zuletzt aktualisiert: {format(new Date((client as any).updated_at || client.created_at), "dd.MM.yyyy HH:mm", { locale: de })}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Mini Cockpit */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DollarSign className="h-5 w-5 text-primary" />
+            Übersicht
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {/* Offene Beträge */}
+            <div className="p-4 rounded-lg border border-border bg-card">
+              <div className="text-sm text-muted-foreground mb-1">Offene Beträge</div>
+              <div className="text-2xl font-bold text-primary">
+                {formatCurrency(
+                  invoices
+                    .filter((inv) => inv.status === "sent" || inv.status === "overdue")
+                    .reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {invoices.filter((inv) => inv.status === "sent" || inv.status === "overdue").length} offene Rechnung(en)
+              </div>
+            </div>
+
+            {/* Aktive Projekte */}
+            <div className="p-4 rounded-lg border border-border bg-card">
+              <div className="text-sm text-muted-foreground mb-1">Aktive Projekte</div>
+              <div className="text-2xl font-bold text-green-400">
+                {projects.filter((p) => p.status === "active").length}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {projects.length} Projekt(e) insgesamt
+              </div>
+            </div>
+          </div>
+
+          {/* Letzte Rechnungen */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium">Letzte Rechnungen</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push(`/app/invoices?client=${client.id}`)}
+              >
+                Alle anzeigen
+              </Button>
+            </div>
+            {invoices.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">
+                Keine Rechnungen vorhanden
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {invoices.map((invoice) => (
+                  <div
+                    key={invoice.id}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
+                    onClick={() => router.push(`/app/invoices/${invoice.id}`)}
+                  >
+                    <div className="flex-1">
+                      <div className="font-medium text-sm">{invoice.invoice_number}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {format(new Date(invoice.invoice_date), "dd.MM.yyyy", { locale: de })}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold">
+                        {formatCurrency(invoice.total_amount)}
+                      </span>
+                      <Badge
+                        variant="outline"
+                        className={statusColors[invoice.status]}
+                      >
+                        {statusLabels[invoice.status]}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
