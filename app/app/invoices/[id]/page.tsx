@@ -107,7 +107,7 @@ export default function InvoiceDetailPage() {
   }, [params.id]);
 
   async function updateStatus(newStatus: string) {
-    if (!invoice) return;
+    if (!canWrite || !invoice) return;
     setUpdatingStatus(true);
     
     try {

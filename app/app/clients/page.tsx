@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Client, CLIENT_STATUSES } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +75,7 @@ const emptyClient: {
 };
 
 function ClientsPage() {
+  const { canWrite } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -108,12 +110,14 @@ function ClientsPage() {
   }, []);
 
   function openNew() {
+    if (!canWrite) return;
     setEditClient(null);
     setForm(emptyClient);
     setDialogOpen(true);
   }
 
   function openEdit(client: Client) {
+    if (!canWrite) return;
     setEditClient(client);
     setForm({
       name: client.name,
@@ -128,6 +132,7 @@ function ClientsPage() {
   }
 
   async function handleSave() {
+    if (!canWrite) return;
     if (!form.name.trim()) {
       toast.error("Name ist erforderlich");
       return;
@@ -159,6 +164,7 @@ function ClientsPage() {
   }
 
   async function handleDelete(id: string) {
+    if (!canWrite) return;
     if (!confirm("Kunde wirklich löschen?")) return;
     const { error } = await supabase.from("clients").delete().eq("id", id);
     if (error) {
@@ -191,6 +197,7 @@ function ClientsPage() {
           onClick={openNew}
           className="bg-primary text-primary-foreground hover:bg-red-700 text-sm sm:text-base"
           size="sm"
+          disabled={!canWrite}
         >
           <Plus className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
           <span className="hidden sm:inline">Neuer Kunde</span>
@@ -298,27 +305,31 @@ function ClientsPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEdit(client);
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(client.id);
-                          }}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canWrite && (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEdit(client);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(client.id);
+                              }}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -383,28 +394,32 @@ function ClientsPage() {
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEdit(client);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(client.id);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canWrite && (
+                      <>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEdit(client);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(client.id);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

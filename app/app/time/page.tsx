@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { TimeEntry, Project } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ import { Play, Square, Clock, Loader2, Trash2 } from "lucide-react";
 
 export default function TimePage() {
   const supabase = createClient();
+  const { canWrite } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [entries, setEntries] = useState<(TimeEntry & { projects?: { title: string } })[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +105,7 @@ export default function TimePage() {
   }, [timerRunning, timerStart]);
 
   async function startTimer() {
+    if (!canWrite) return;
     if (!timerProjectId) {
       toast.error("Bitte Projekt wählen");
       return;
@@ -129,6 +132,7 @@ export default function TimePage() {
   }
 
   async function stopTimer() {
+    if (!canWrite) return;
     if (!activeEntryId) return;
     const endTime = new Date().toISOString();
     const durationMinutes = Math.max(1, Math.round(elapsed / 60));
@@ -156,6 +160,7 @@ export default function TimePage() {
   }
 
   async function deleteEntry(id: string) {
+    if (!canWrite) return;
     if (!confirm("Eintrag löschen?")) return;
     const { error } = await supabase.from("time_entries").delete().eq("id", id);
     if (error) {
@@ -222,7 +227,7 @@ export default function TimePage() {
               <Select
                 value={timerProjectId}
                 onValueChange={setTimerProjectId}
-                disabled={timerRunning}
+                disabled={timerRunning || !canWrite}
               >
                 <SelectTrigger className="bg-secondary">
                   <SelectValue placeholder="Projekt wählen..." />
@@ -243,12 +248,16 @@ export default function TimePage() {
                 onChange={(e) => setTimerNote(e.target.value)}
                 placeholder="Was machst du gerade?"
                 className="bg-secondary"
+                readOnly={!canWrite}
+                disabled={!canWrite}
               />
             </div>
           </div>
 
           <div className="flex justify-center gap-3">
-            {!timerRunning ? (
+            {!canWrite ? (
+              <p className="text-sm text-muted-foreground">Nur Lesezugriff – Timer nicht verfügbar</p>
+            ) : !timerRunning ? (
               <Button
                 onClick={startTimer}
                 size="lg"
@@ -312,14 +321,18 @@ export default function TimePage() {
                         {entry.note || "–"}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => deleteEntry(entry.id)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canWrite ? (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => deleteEntry(entry.id)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">–</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

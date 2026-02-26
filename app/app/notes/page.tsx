@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Note, Employee } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,7 @@ const getRoleInfo = (roleValue: string) => {
 };
 
 function NotesPage() {
+  const { canWrite } = useAuth();
   const [notes, setNotes] = useState<(Note & { profiles?: { full_name: string | null }; employees?: Employee })[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +139,7 @@ function NotesPage() {
   }, [loadEmployees, loadNotes]);
 
   function openNew() {
+    if (!canWrite) return;
     setEditNote(null);
     setTitle("");
     setDescription("");
@@ -147,6 +150,7 @@ function NotesPage() {
   }
 
   function openEdit(note: Note) {
+    if (!canWrite) return;
     setEditNote(note);
     setTitle(note.title);
     setDescription(note.description);
@@ -213,6 +217,7 @@ function NotesPage() {
   }
 
   async function handleSave() {
+    if (!canWrite) return;
     if (!title.trim()) {
       toast.error("Titel ist erforderlich");
       return;
@@ -261,6 +266,7 @@ function NotesPage() {
   }
 
   async function handleDelete(note: Note) {
+    if (!canWrite) return;
     if (!confirm("Möchten Sie diese Notiz wirklich löschen?")) return;
 
     const { error } = await supabase.from("notes").delete().eq("id", note.id);
@@ -288,7 +294,7 @@ function NotesPage() {
           <h1 className="text-3xl font-bold text-foreground">Notizen</h1>
           <p className="text-muted-foreground mt-1">Verwalten Sie Ihre Notizen und Ideen</p>
         </div>
-        <Button onClick={openNew} className="bg-primary text-primary-foreground hover:bg-red-700">
+        <Button onClick={openNew} className="bg-primary text-primary-foreground hover:bg-red-700" disabled={!canWrite}>
           <Plus className="mr-2 h-4 w-4" />
           Neue Notiz
         </Button>
@@ -349,22 +355,26 @@ function NotesPage() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEdit(note)}
-                      className="h-8 w-8 p-0"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(note)}
-                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {canWrite && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEdit(note)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(note)}
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </CardHeader>

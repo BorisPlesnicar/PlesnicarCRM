@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import {
   Client,
   Project,
@@ -51,8 +52,14 @@ const defaultItems: OfferItem[] = SERVICE_NAMES.map((name, i) => ({
 export default function EditOfferPage() {
   const params = useParams();
   const router = useRouter();
+  const { canWrite, loading } = useAuth();
   const supabase = createClient();
   const offerId = params.id as string;
+
+  if (!loading && !canWrite) {
+    router.replace(`/app/offers/${offerId}`);
+    return null;
+  }
 
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);

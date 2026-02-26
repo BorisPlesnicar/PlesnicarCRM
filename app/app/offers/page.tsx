@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Offer, OFFER_STATUSES } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function OffersPage() {
+  const { canWrite } = useAuth();
   const [offers, setOffers] = useState<(Offer & { clients?: { name: string } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -68,6 +70,7 @@ export default function OffersPage() {
   }, []);
 
   async function handleDelete(id: string) {
+    if (!canWrite) return;
     if (!confirm("Angebot wirklich löschen?")) return;
     const { error } = await supabase.from("offers").delete().eq("id", id);
     if (error) {
@@ -100,6 +103,7 @@ export default function OffersPage() {
         <Button
           onClick={() => router.push("/app/offers/new")}
           className="bg-primary text-primary-foreground hover:bg-red-700"
+          disabled={!canWrite}
         >
           <Plus className="mr-2 h-4 w-4" />
           Neues Angebot
@@ -206,17 +210,19 @@ export default function OffersPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(offer.id);
-                          }}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canWrite && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(offer.id);
+                            }}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Offer, OfferItem, Client, OFFER_STATUSES } from "@/lib/types";
 import { calculateOffer, formatCurrency } from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +56,7 @@ const statusColors: Record<string, string> = {
 export default function OfferDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { canWrite } = useAuth();
   const supabase = createClient();
   const [offer, setOffer] = useState<Offer | null>(null);
   const [items, setItems] = useState<OfferItem[]>([]);
@@ -131,7 +133,7 @@ export default function OfferDetailPage() {
   }, [offer, items]);
 
   async function updateStatus(newStatus: string) {
-    if (!offer) return;
+    if (!canWrite || !offer) return;
     setUpdatingStatus(true);
     const { error } = await supabase
       .from("offers")
@@ -178,7 +180,7 @@ export default function OfferDetailPage() {
           <Select
             value={offer.status}
             onValueChange={updateStatus}
-            disabled={updatingStatus}
+            disabled={updatingStatus || !canWrite}
           >
             <SelectTrigger className="w-40 bg-secondary">
               <SelectValue />
@@ -191,14 +193,16 @@ export default function OfferDetailPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button
-            onClick={() => router.push(`/app/offers/${offer.id}/edit`)}
-            variant="outline"
-            className="border-border"
-          >
-            <Pencil className="mr-2 h-4 w-4" />
-            Bearbeiten
-          </Button>
+          {canWrite && (
+            <Button
+              onClick={() => router.push(`/app/offers/${offer.id}/edit`)}
+              variant="outline"
+              className="border-border"
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Bearbeiten
+            </Button>
+          )}
           <Button
             onClick={() => setShowPdf(true)}
             className="bg-primary text-primary-foreground hover:bg-red-700"

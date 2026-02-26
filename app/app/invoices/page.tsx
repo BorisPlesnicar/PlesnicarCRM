@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Invoice, INVOICE_STATUSES } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function InvoicesPage() {
+  const { canWrite } = useAuth();
   const [invoices, setInvoices] = useState<(Invoice & { clients?: { name: string } })[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -72,6 +74,7 @@ export default function InvoicesPage() {
   }, []);
 
   async function handleDelete(id: string) {
+    if (!canWrite) return;
     if (!confirm("Rechnung wirklich löschen?")) return;
     const { error } = await supabase.from("invoices").delete().eq("id", id);
     if (error) {
@@ -103,6 +106,7 @@ export default function InvoicesPage() {
           onClick={() => router.push("/app/invoices/new")}
           className="bg-primary text-primary-foreground hover:bg-red-700 text-sm sm:text-base"
           size="sm"
+          disabled={!canWrite}
         >
           <Plus className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
           <span className="hidden sm:inline">Neue Rechnung</span>
@@ -207,13 +211,15 @@ export default function InvoicesPage() {
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(invoice.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-400" />
-                            </Button>
+                            {canWrite && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDelete(invoice.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-400" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -268,14 +274,16 @@ export default function InvoicesPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-400"
-                          onClick={() => handleDelete(invoice.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canWrite && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-400"
+                            onClick={() => handleDelete(invoice.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>

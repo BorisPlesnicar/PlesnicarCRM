@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Event } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
 export default function EventsPage() {
+  const { canWrite } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -63,6 +65,7 @@ export default function EventsPage() {
   }, [loadEvents]);
 
   function openNew() {
+    if (!canWrite) return;
     setEditEvent(null);
     const now = new Date();
     const endTime = new Date(now.getTime() + 60 * 60 * 1000); // Default 1 hour
@@ -77,6 +80,7 @@ export default function EventsPage() {
   }
 
   function openEdit(event: Event) {
+    if (!canWrite) return;
     setEditEvent(event);
     setForm({
       title: event.title,
@@ -89,6 +93,7 @@ export default function EventsPage() {
   }
 
   async function handleSave() {
+    if (!canWrite) return;
     if (!form.title.trim()) {
       toast.error("Titel ist erforderlich");
       return;
@@ -141,6 +146,7 @@ export default function EventsPage() {
   }
 
   async function handleDelete(id: string) {
+    if (!canWrite) return;
     if (!confirm("Termin wirklich löschen?")) return;
     const { error } = await supabase.from("events").delete().eq("id", id);
     if (error) {
@@ -180,6 +186,7 @@ export default function EventsPage() {
           onClick={openNew}
           className="bg-primary text-primary-foreground hover:bg-red-700 text-sm sm:text-base"
           size="sm"
+          disabled={!canWrite}
         >
           <Plus className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
           <span className="hidden sm:inline">Neuer Termin</span>
@@ -254,21 +261,25 @@ export default function EventsPage() {
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEdit(event)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(event.id)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canWrite && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEdit(event)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(event.id)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -344,21 +355,25 @@ export default function EventsPage() {
                     <Copy className="mr-1.5 h-3.5 w-3.5" />
                     Link
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openEdit(event)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDelete(event.id)}
-                    className="text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {canWrite && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEdit(event)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleDelete(event.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ))

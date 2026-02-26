@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Employee } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,11 +46,13 @@ function EmployeeCard({
   onView,
   onEdit,
   onDelete,
+  canWrite,
 }: {
   employee: Employee;
   onView: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  canWrite: boolean;
 }) {
   const roleInfo = getRoleInfo(employee.role);
   const Icon = roleInfo.icon;
@@ -89,17 +92,25 @@ function EmployeeCard({
 
           {/* Actions */}
           <div className="flex gap-1 w-full mt-1" onClick={(e) => e.stopPropagation()}>
-            <Button variant="ghost" size="sm" onClick={onEdit} className="h-6 px-2 flex-1">
-              <Pencil className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onDelete}
-              className="h-6 px-2 text-destructive hover:text-destructive"
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+            {canWrite ? (
+              <>
+                <Button variant="ghost" size="sm" onClick={onEdit} className="h-6 px-2 flex-1">
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onDelete}
+                  className="h-6 px-2 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={onView} className="h-6 px-2 flex-1">
+                Ansehen
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>
@@ -108,6 +119,7 @@ function EmployeeCard({
 }
 
 export default function EmployeesPage() {
+  const { canWrite } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -142,6 +154,7 @@ export default function EmployeesPage() {
   }, [loadEmployees]);
 
   function openNew() {
+    if (!canWrite) return;
     setEditEmployee(null);
     setName("");
     setRole("employee");
@@ -157,6 +170,7 @@ export default function EmployeesPage() {
   }
 
   function openEdit(employee: Employee) {
+    if (!canWrite) return;
     setEditEmployee(employee);
     setName(employee.name);
     setRole(employee.role as "owner" | "supporter" | "employee");
@@ -217,6 +231,7 @@ export default function EmployeesPage() {
   }
 
   async function handleSave() {
+    if (!canWrite) return;
     if (!name.trim()) {
       toast.error("Name ist erforderlich");
       return;
@@ -272,6 +287,7 @@ export default function EmployeesPage() {
   }
 
   async function handleDelete(employee: Employee) {
+    if (!canWrite) return;
     if (!confirm("Möchten Sie dieses Teammitglied wirklich löschen?")) return;
 
     const { error } = await supabase.from("employees").delete().eq("id", employee.id);
@@ -299,7 +315,7 @@ export default function EmployeesPage() {
           <h1 className="text-2xl font-bold text-foreground">Team</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Verwalten Sie Ihr Team</p>
         </div>
-        <Button onClick={openNew} size="sm" className="bg-primary text-primary-foreground hover:bg-red-700">
+        <Button onClick={openNew} size="sm" className="bg-primary text-primary-foreground hover:bg-red-700" disabled={!canWrite}>
           <Plus className="mr-2 h-4 w-4" />
           Neues Teammitglied
         </Button>
@@ -331,6 +347,7 @@ export default function EmployeesPage() {
                       onView={() => openView(employee)}
                       onEdit={() => openEdit(employee)}
                       onDelete={() => handleDelete(employee)}
+                      canWrite={canWrite}
                     />
                   ))}
               </div>
@@ -354,6 +371,7 @@ export default function EmployeesPage() {
                       onView={() => openView(employee)}
                       onEdit={() => openEdit(employee)}
                       onDelete={() => handleDelete(employee)}
+                      canWrite={canWrite}
                     />
                   ))}
               </div>
@@ -377,6 +395,7 @@ export default function EmployeesPage() {
                       onView={() => openView(employee)}
                       onEdit={() => openEdit(employee)}
                       onDelete={() => handleDelete(employee)}
+                      canWrite={canWrite}
                     />
                   ))}
               </div>

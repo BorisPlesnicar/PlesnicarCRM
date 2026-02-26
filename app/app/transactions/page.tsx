@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Transaction, TRANSACTION_TYPES } from "@/lib/types";
 import { formatCurrency } from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,6 +90,7 @@ export default function TransactionsPage() {
   const [filterMonth, setFilterMonth] = useState<string>("all");
   const supabase = createClient();
   const router = useRouter();
+  const { canWrite } = useAuth();
 
   // Form state
   const [type, setType] = useState<"income" | "expense">("income");
@@ -137,6 +139,7 @@ export default function TransactionsPage() {
   }
 
   async function handleSave() {
+    if (!canWrite) return;
     if (!amount || parseFloat(amount) <= 0) {
       toast.error("Bitte geben Sie einen Betrag ein");
       return;
@@ -182,6 +185,7 @@ export default function TransactionsPage() {
   }
 
   async function handleDelete(id: string) {
+    if (!canWrite) return;
     if (!confirm("Möchten Sie diese Transaktion wirklich löschen?")) return;
 
     const { error } = await supabase.from("transactions").delete().eq("id", id);
@@ -304,11 +308,15 @@ export default function TransactionsPage() {
           <p className="text-muted-foreground mt-1">Verwalten Sie Ihre Finanzen</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
+          if (!canWrite) return;
           setDialogOpen(open);
           if (!open) resetForm();
         }}>
           <DialogTrigger asChild>
-            <Button className="bg-primary text-primary-foreground hover:bg-red-700">
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-red-700"
+              disabled={!canWrite}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Neue Transaktion
             </Button>
@@ -562,22 +570,26 @@ export default function TransactionsPage() {
                       {formatCurrency(transaction.amount)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEdit(transaction)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(transaction.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-400" />
-                        </Button>
-                      </div>
+                      {canWrite ? (
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEdit(transaction)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(transaction.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-400" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Nur Lesen</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

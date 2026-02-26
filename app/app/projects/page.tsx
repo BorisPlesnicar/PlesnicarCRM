@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/app/AuthProvider";
 import { Project, Client, PROJECT_STATUSES } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +73,7 @@ const emptyProject: {
 };
 
 function ProjectsPage() {
+  const { canWrite } = useAuth();
   const [projects, setProjects] = useState<(Project & { clients?: Client })[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,12 +111,14 @@ function ProjectsPage() {
   }, []);
 
   function openNew() {
+    if (!canWrite) return;
     setEditProject(null);
     setForm(emptyProject);
     setDialogOpen(true);
   }
 
   function openEdit(project: Project) {
+    if (!canWrite) return;
     setEditProject(project);
     setForm({
       client_id: project.client_id,
@@ -128,6 +132,7 @@ function ProjectsPage() {
   }
 
   async function handleSave() {
+    if (!canWrite) return;
     if (!form.title.trim()) {
       toast.error("Titel ist erforderlich");
       return;
@@ -168,6 +173,7 @@ function ProjectsPage() {
   }
 
   async function handleDelete(id: string) {
+    if (!canWrite) return;
     if (!confirm("Projekt wirklich löschen?")) return;
     const { error } = await supabase.from("projects").delete().eq("id", id);
     if (error) {
@@ -200,6 +206,7 @@ function ProjectsPage() {
         <Button
           onClick={openNew}
           className="bg-primary text-primary-foreground hover:bg-red-700"
+          disabled={!canWrite}
         >
           <Plus className="mr-2 h-4 w-4" />
           Neues Projekt
@@ -299,27 +306,31 @@ function ProjectsPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEdit(project);
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(project.id);
-                          }}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canWrite && (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEdit(project);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(project.id);
+                              }}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
