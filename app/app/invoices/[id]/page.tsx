@@ -39,6 +39,7 @@ import {
 import dynamic from "next/dynamic";
 import { format, addDays } from "date-fns";
 import { de } from "date-fns/locale";
+import { useAuth } from "@/app/app/AuthProvider";
 
 const InvoicePDF = dynamic(() => import("@/components/invoices/invoice-pdf"), {
   ssr: false,
@@ -64,6 +65,7 @@ export default function InvoiceDetailPage() {
   const params = useParams();
   const router = useRouter();
   const supabase = createClient();
+  const { canWrite, loading: authLoading } = useAuth();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [client, setClient] = useState<Client | null>(null);
@@ -193,7 +195,7 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -229,8 +231,8 @@ export default function InvoiceDetailPage() {
         <div className="flex gap-2">
           <Select
             value={invoice.status}
-            onValueChange={updateStatus}
-            disabled={updatingStatus}
+            onValueChange={canWrite ? updateStatus : () => {}}
+            disabled={updatingStatus || !canWrite}
           >
             <SelectTrigger className="w-40 bg-secondary">
               <SelectValue />
@@ -243,20 +245,26 @@ export default function InvoiceDetailPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button
-            onClick={() => router.push(`/app/invoices/${invoice.id}/edit`)}
-            variant="outline"
-            className="border-border"
-          >
-            <Pencil className="mr-2 h-4 w-4" />
-            Bearbeiten
-          </Button>
+          {canWrite && (
+            <Button
+              onClick={() => router.push(`/app/invoices/${invoice.id}/edit`)}
+              variant="outline"
+              className="border-border"
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Bearbeiten
+            </Button>
+          )}
           {client?.email && (
             <Button
               variant="outline"
               onClick={() => {
-                const subject = encodeURIComponent(`Rechnung ${invoice.invoice_number}`);
-                const body = encodeURIComponent(`Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie die Rechnung ${invoice.invoice_number}.\n\nMit freundlichen Grüßen`);
+                const subject = encodeURIComponent(
+                  `Rechnung ${invoice.invoice_number}`
+                );
+                const body = encodeURIComponent(
+                  `Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie die Rechnung ${invoice.invoice_number}.\n\nMit freundlichen Grüßen`
+                );
                 window.location.href = `mailto:${client.email}?subject=${subject}&body=${body}`;
               }}
               className="border-border"
@@ -454,7 +462,7 @@ export default function InvoiceDetailPage() {
           <CardTitle>Aktionen</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
-          {invoice.status !== "paid" && (
+          {invoice.status !== "paid" && canWrite && (
             <Button
               onClick={() => updateStatus("paid")}
               disabled={updatingStatus}
@@ -464,7 +472,7 @@ export default function InvoiceDetailPage() {
               Als bezahlt markieren
             </Button>
           )}
-          {(invoice.status === "sent" || invoice.status === "overdue") && (
+          {(invoice.status === "sent" || invoice.status === "overdue") && canWrite && (
             <Button
               onClick={async () => {
                 setCreatingReminder(true);
@@ -537,6 +545,11 @@ export default function InvoiceDetailPage() {
               <AlertCircle className="mr-2 h-4 w-4" />
               {creatingReminder ? "Erstelle..." : "Mahnung erzeugen"}
             </Button>
+          )}
+          {!canWrite && (
+            <p className="text-xs text-muted-foreground">
+              Sie sind als View Moderator angemeldet. Aktionen stehen nur Benutzern mit Schreibrechten zur Verfügung.
+            </p>
           )}
         </CardContent>
       </Card>

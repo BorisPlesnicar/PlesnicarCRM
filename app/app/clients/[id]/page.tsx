@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { useAuth } from "@/app/app/AuthProvider";
 
 const statusLabels: Record<string, string> = {
   lead: "Lead",
@@ -71,6 +72,7 @@ export default function ClientDetailPage() {
   const params = useParams();
   const router = useRouter();
   const supabase = createClient();
+  const { canWrite, loading: authLoading } = useAuth();
   const [client, setClient] = useState<Client | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
@@ -137,7 +139,7 @@ export default function ClientDetailPage() {
     setSavingNotes(false);
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -206,42 +208,72 @@ export default function ClientDetailPage() {
               <span>{client.address}</span>
             </div>
           )}
-          <div className="mt-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Notizen</Label>
-              {notesChanged && (
-                <Button
-                  size="sm"
-                  onClick={saveNotes}
-                  disabled={savingNotes}
-                  className="h-7"
-                >
-                  {savingNotes ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <>
-                      <Save className="mr-1 h-3 w-3" />
-                      Speichern
-                    </>
+          {canWrite ? (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Notizen</Label>
+                {notesChanged && (
+                  <Button
+                    size="sm"
+                    onClick={saveNotes}
+                    disabled={savingNotes}
+                    className="h-7"
+                  >
+                    {savingNotes ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <>
+                        <Save className="mr-1 h-3 w-3" />
+                        Speichern
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+              <Textarea
+                value={notes}
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                  setNotesChanged(e.target.value !== (client?.notes || ""));
+                }}
+                placeholder="Notizen zum Kunden..."
+                className="min-h-[100px] resize-none"
+              />
+              {client.notes && !notesChanged && (
+                <p className="text-xs text-muted-foreground">
+                  Zuletzt aktualisiert:{" "}
+                  {format(
+                    new Date(
+                      (client as any).updated_at || client.created_at
+                    ),
+                    "dd.MM.yyyy HH:mm",
+                    { locale: de }
                   )}
-                </Button>
+                </p>
               )}
             </div>
-            <Textarea
-              value={notes}
-              onChange={(e) => {
-                setNotes(e.target.value);
-                setNotesChanged(e.target.value !== (client?.notes || ""));
-              }}
-              placeholder="Notizen zum Kunden..."
-              className="min-h-[100px] resize-none"
-            />
-            {client.notes && !notesChanged && (
-              <p className="text-xs text-muted-foreground">
-                Zuletzt aktualisiert: {format(new Date((client as any).updated_at || client.created_at), "dd.MM.yyyy HH:mm", { locale: de })}
-              </p>
-            )}
-          </div>
+          ) : (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Notizen (nur lesen)</Label>
+              </div>
+              <div className="min-h-[80px] rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground whitespace-pre-wrap">
+                {client.notes ? client.notes : "Keine Notizen hinterlegt."}
+              </div>
+              {client.notes && (
+                <p className="text-xs text-muted-foreground">
+                  Zuletzt aktualisiert:{" "}
+                  {format(
+                    new Date(
+                      (client as any).updated_at || client.created_at
+                    ),
+                    "dd.MM.yyyy HH:mm",
+                    { locale: de }
+                  )}
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -338,13 +370,15 @@ export default function ClientDetailPage() {
             <FolderKanban className="h-5 w-5" />
             Projekte ({projects.length})
           </CardTitle>
-          <Button
-            size="sm"
-            onClick={() => router.push(`/app/projects?client=${client.id}`)}
-            className="bg-primary text-primary-foreground hover:bg-red-700"
-          >
-            Neues Projekt
-          </Button>
+          {canWrite && (
+            <Button
+              size="sm"
+              onClick={() => router.push(`/app/projects?client=${client.id}`)}
+              className="bg-primary text-primary-foreground hover:bg-red-700"
+            >
+              Neues Projekt
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {projects.length === 0 ? (
@@ -392,15 +426,17 @@ export default function ClientDetailPage() {
             <FileText className="h-5 w-5" />
             Angebote ({offers.length})
           </CardTitle>
-          <Button
-            size="sm"
-            onClick={() =>
-              router.push(`/app/offers/new?client=${client.id}`)
-            }
-            className="bg-primary text-primary-foreground hover:bg-red-700"
-          >
-            Neues Angebot
-          </Button>
+          {canWrite && (
+            <Button
+              size="sm"
+              onClick={() =>
+                router.push(`/app/offers/new?client=${client.id}`)
+              }
+              className="bg-primary text-primary-foreground hover:bg-red-700"
+            >
+              Neues Angebot
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {offers.length === 0 ? (

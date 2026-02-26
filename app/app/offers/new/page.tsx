@@ -37,6 +37,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useAuth } from "@/app/app/AuthProvider";
 
 export default function NewOfferPageWrapper() {
   return (
@@ -59,6 +60,7 @@ function NewOfferPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
+  const { canWrite, loading: authLoading } = useAuth();
 
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -339,10 +341,30 @@ function NewOfferPage() {
       ? projects.filter((p) => p.client_id === clientId)
       : projects;
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!canWrite) {
+    return (
+      <div className="space-y-4 pb-8">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" onClick={() => router.push("/app/offers")}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Zurück
+          </Button>
+        </div>
+        <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-700">
+          <p className="font-semibold mb-1">Nur Lesezugriff</p>
+          <p>
+            Sie sind als View Moderator angemeldet. Das Erstellen neuer Angebote ist in diesem Modus nicht
+            erlaubt.
+          </p>
+        </div>
       </div>
     );
   }

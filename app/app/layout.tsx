@@ -29,6 +29,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import AIChatbot from "@/components/ai-chatbot";
+import { AuthProvider, useAuth } from "./AuthProvider";
+import { isViewModerator } from "@/lib/auth/roles";
 
 type NavItem = {
   href: string;
@@ -93,10 +95,11 @@ const navCategories: NavCategory[] = [
   },
 ];
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const { role, canWrite, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openCategories, setOpenCategories] = useState<Set<string>>(
     new Set(navCategories.filter((cat) => cat.defaultOpen).map((cat) => cat.label))
@@ -150,6 +153,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       return next;
     });
   }, [pathname]);
+
+  const readOnly = !loading && isViewModerator(role);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -236,8 +241,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
+        {/* Role Badge / Logout */}
+        <div className="border-t border-sidebar-border p-3 space-y-2">
+          {readOnly && (
+            <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-500 flex items-center gap-2">
+              <span className="inline-flex h-2 w-2 rounded-full bg-yellow-400" />
+              <span>View Moderator – nur Lesezugriff</span>
+            </div>
+          )}
         {/* Logout */}
-        <div className="border-t border-sidebar-border p-3">
           <button
             onClick={handleLogout}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
@@ -368,6 +380,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 lg:p-8">
+          {/* Read-only banner for mobile / content area */}
+          {readOnly && (
+            <div className="mb-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-2 text-xs sm:text-sm text-yellow-600 flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-2 w-2 rounded-full bg-yellow-400" />
+                <span>Sie sind als View Moderator angemeldet – Änderungen sind nicht möglich.</span>
+              </span>
+            </div>
+          )}
           {children}
         </main>
       </div>
@@ -377,3 +398,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <AppShell>{children}</AppShell>
+    </AuthProvider>
+  );
+}
+

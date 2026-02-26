@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Invoice } from "@/lib/types";
+import { useAuth } from "@/app/app/AuthProvider";
 
 const InvoicePDF = dynamic(() => import("@/components/invoices/invoice-pdf"), {
   ssr: false,
@@ -31,6 +32,7 @@ import dynamic from "next/dynamic";
 export default function NewInvoicePage() {
   const router = useRouter();
   const supabase = createClient();
+  const { canWrite, loading: authLoading } = useAuth();
 
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -421,10 +423,28 @@ export default function NewInvoicePage() {
       ? offers.filter((o) => o.client_id === clientId)
       : offers;
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!canWrite) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" onClick={() => router.push("/app/invoices")}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Zurück
+        </Button>
+        <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-700">
+          <p className="font-semibold mb-1">Nur Lesezugriff</p>
+          <p>
+            Sie sind als View Moderator angemeldet. Das Erstellen neuer Rechnungen ist in diesem Modus nicht
+            erlaubt.
+          </p>
+        </div>
       </div>
     );
   }
