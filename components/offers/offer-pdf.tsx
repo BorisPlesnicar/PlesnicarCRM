@@ -11,7 +11,7 @@ import {
   pdf,
   Font,
 } from "@react-pdf/renderer";
-import { Offer, OfferItem, Client } from "@/lib/types";
+import { Offer, OfferItem, OfferAddon, Client } from "@/lib/types";
 import { OfferCalculation } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
 import { Download, X, Loader2 } from "lucide-react";
@@ -228,9 +228,87 @@ function formatDateDE(dateStr: string): string {
   return dateStr;
 }
 
+// Einfache Formatierung im Projektumfang: **fett**, # Überschrift, ## Unterüberschrift
+function parseInlineBold(
+  line: string,
+  baseStyle: Record<string, number | string>,
+  boldStyle: Record<string, string | number>
+) {
+  const parts: Array<{ text: string; bold: boolean }> = [];
+  let rest = line;
+  while (rest.length > 0) {
+    const idx = rest.indexOf("**");
+    if (idx === -1) {
+      if (rest) parts.push({ text: rest, bold: false });
+      break;
+    }
+    if (idx > 0) parts.push({ text: rest.slice(0, idx), bold: false });
+    const end = rest.indexOf("**", idx + 2);
+    if (end === -1) {
+      parts.push({ text: rest.slice(idx), bold: false });
+      break;
+    }
+    parts.push({ text: rest.slice(idx + 2, end), bold: true });
+    rest = rest.slice(end + 2);
+  }
+  return (
+    <Text style={baseStyle}>
+      {parts.map((p, i) =>
+        p.bold ? (
+          <Text key={i} style={boldStyle}>
+            {p.text}
+          </Text>
+        ) : (
+          p.text
+        )
+      )}
+    </Text>
+  );
+}
+
+function renderProjectScope(text: string) {
+  const fallback =
+    "Konzeption und Umsetzung einer professionellen Unternehmenswebsite, optimiert für alle Endgeräte. Optimiert für Desktop, Tablet und Smartphone.";
+  const raw = (text || "").trim().length > 0 ? text : fallback;
+  const lines = raw.split(/\r?\n/);
+  const baseStyle: Record<string, number | string> = { fontSize: 9, lineHeight: 1.5, color: "#333", marginBottom: 4 };
+  const boldStyle: Record<string, string | number> = { fontWeight: 700 };
+  const heading1Style = { fontSize: 10, fontWeight: 700, color: "#1a1a1a", marginTop: 6, marginBottom: 2 };
+  const heading2Style = { fontSize: 9.5, fontWeight: 700, color: "#1a1a1a", marginTop: 4, marginBottom: 2 };
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      {lines.map((line, i) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("## ")) {
+          return (
+            <Text key={i} style={heading2Style}>
+              {trimmed.slice(3)}
+            </Text>
+          );
+        }
+        if (trimmed.startsWith("# ")) {
+          return (
+            <Text key={i} style={heading1Style}>
+              {trimmed.slice(2)}
+            </Text>
+          );
+        }
+        if (trimmed === "") return <View key={i} style={{ height: 6 }} />;
+        return (
+          <View key={i} style={{ marginBottom: 2 }}>
+            {parseInlineBold(line, baseStyle, boldStyle)}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 interface Props {
   offer: Offer;
   items: OfferItem[];
+  addons?: OfferAddon[];
   client: Client | null;
   calc: OfferCalculation;
   onClose: () => void;
@@ -239,10 +317,13 @@ interface Props {
 function OfferDocument({
   offer,
   items,
+  addons = [],
   client,
   calc,
   logoUrl,
 }: Omit<Props, "onClose"> & { logoUrl: string }) {
+  const addonsSum = addons.reduce((s, a) => s + (Number(a.price) || 0), 0);
+  const totalWithAddons = calc.total + addonsSum;
   const hasExtras =
     offer.global_discount_percent > 0 ||
     offer.express_enabled ||
@@ -283,43 +364,44 @@ function OfferDocument({
           </View>
         </View>
 
-        {/* ========== PROJEKTUMFANG ========== */}
+        {/* ========== 1. PROJEKTUMFANG (Kurzfassung, eigener Text) ========== */}
         {offer.offer_type !== "bau" && (
           <>
-            <Text style={s.sectionTitle}>Projektumfang</Text>
+            <Text style={s.sectionTitle}>1. Projektumfang</Text>
             <Text style={s.description}>
-              Konzeption und Umsetzung einer professionellen Unternehmenswebsite,
-              optimiert für alle Endgeräte. Optimiert für Desktop, Tablet und
-              Smartphone.
+              {offer.project_scope_short && offer.project_scope_short.trim().length > 0
+                ? offer.project_scope_short
+                : "Kurzbeschreibung des Projekts. Der detaillierte Projektumfang ist unter Punkt 3 beschrieben."}
             </Text>
           </>
         )}
 
-        {/* ========== LEISTUNGEN ========== */}
-        <Text style={s.sectionTitle}>Leistungen</Text>
+        {/* ========== 2. LEISTUNGEN (wrap={false}: Tabelle bricht nicht mittendurch, springt geschlossen auf nächste Seite) ========== */}
+        <View wrap={false}>
+          <Text style={s.sectionTitle}>2. Leistungen</Text>
 
-        {/* Table Header */}
-        <View style={s.tableHeader}>
-          <Text style={[s.tableHeaderCell, s.colPos]}>Pos.</Text>
-          <Text style={[s.tableHeaderCell, s.colLeistung]}>Leistung</Text>
-          {offer.offer_type !== "bau" && (
-            <>
-              <Text style={[s.tableHeaderCell, s.colStd]}>Std.</Text>
-              <Text style={[s.tableHeaderCell, s.colRate]}>€/h</Text>
-            </>
-          )}
-          <Text
-            style={[
-              s.tableHeaderCell,
-              offer.offer_type === "bau" ? { width: "50%", textAlign: "right" } : s.colPreis,
-            ]}
-          >
-            Preis (€)
-          </Text>
-        </View>
+          {/* Table Header */}
+          <View style={s.tableHeader}>
+            <Text style={[s.tableHeaderCell, s.colPos]}>Pos.</Text>
+            <Text style={[s.tableHeaderCell, s.colLeistung]}>Leistung</Text>
+            {offer.offer_type !== "bau" && (
+              <>
+                <Text style={[s.tableHeaderCell, s.colStd]}>Std.</Text>
+                <Text style={[s.tableHeaderCell, s.colRate]}>€/h</Text>
+              </>
+            )}
+            <Text
+              style={[
+                s.tableHeaderCell,
+                offer.offer_type === "bau" ? { width: "50%", textAlign: "right" } : s.colPreis,
+              ]}
+            >
+              Preis (€)
+            </Text>
+          </View>
 
-        {/* Table Rows */}
-        {items.map((item, i) => (
+          {/* Table Rows – reguläre Leistungen */}
+          {items.map((item, i) => (
           <View
             key={item.id || i}
             style={i % 2 === 0 ? s.tableRow : s.tableRowAlt}
@@ -356,19 +438,73 @@ function OfferDocument({
           </View>
         ))}
 
-        {/* ========== EXTRAS (if any) ========== */}
-        {hasExtras && (
-          <View style={{ marginTop: 8 }}>
-            {offer.global_discount_percent > 0 && (
-              <View style={s.extrasRow}>
-                <Text style={s.extrasLabel}>
-                  Rabatt ({offer.global_discount_percent}%)
-                </Text>
-                <Text style={[s.extrasValue, { color: "#16a34a" }]}>
-                  -{formatEur(calc.global_discount_eur)} €
-                </Text>
-              </View>
+        {/* Table Rows – Zusatzleistungen (werden an „Leistungen“ angehängt) */}
+        {addons.map((addon, i) => (
+          <View
+            key={addon.id || `addon-${i}`}
+            style={
+              (items.length + i) % 2 === 0 ? s.tableRow : s.tableRowAlt
+            }
+          >
+            <Text style={s.colPos}>
+              {items.length + i + 1}
+            </Text>
+            <Text
+              style={
+                offer.offer_type === "bau"
+                  ? { width: "42%", paddingRight: 5 }
+                  : s.colLeistung
+              }
+            >
+              {addon.title}
+            </Text>
+            {offer.offer_type !== "bau" && (
+              <>
+                <Text style={s.colStd} />
+                <Text style={s.colRate} />
+              </>
             )}
+            <Text
+              style={
+                offer.offer_type === "bau"
+                  ? { width: "50%", textAlign: "right" as const, fontWeight: 600 }
+                  : [s.colPreis, { fontWeight: 600 }]
+              }
+            >
+              {formatEur(Number(addon.price))}
+            </Text>
+          </View>
+        ))}
+        </View>
+
+        {/* ========== ZUSAMMENFASSUNG (nicht umbrechen, damit Gesamt nicht auf nächste Seite rutscht) ========== */}
+        <View wrap={false} style={{ marginTop: 8 }}>
+          <View style={s.extrasRow}>
+            <Text style={s.extrasLabel}>Summe Positionen</Text>
+            <Text style={s.extrasValue}>
+              {formatEur(calc.sum_positions + addonsSum)} €
+            </Text>
+          </View>
+          {offer.global_discount_percent > 0 && (
+            <View style={s.extrasRow}>
+              <Text
+                style={[
+                  s.extrasLabel,
+                  { color: "#16a34a" }, // Grün für das Label
+                ]}
+              >
+                Rabatt ({offer.global_discount_percent}%)
+              </Text>
+              <Text
+                style={[
+                  s.extrasValue,
+                  { color: "#16a34a" }, // Grün für den Betrag
+                ]}
+              >
+                -{formatEur(calc.global_discount_eur)} €
+              </Text>
+            </View>
+          )}
             {offer.express_enabled && (
               <View style={s.extrasRow}>
                 <Text style={s.extrasLabel}>
@@ -401,7 +537,7 @@ function OfferDocument({
             {offer.vat_percent > 0 && (
               <>
                 <View style={s.extrasRow}>
-                  <Text style={s.extrasLabel}>Netto</Text>
+                  <Text style={s.extrasLabel}>Zwischensumme (Netto)</Text>
                   <Text style={s.extrasValue}>
                     {formatEur(calc.subtotal_before_vat)} €
                   </Text>
@@ -416,29 +552,24 @@ function OfferDocument({
                 </View>
               </>
             )}
+          <View style={s.totalRow}>
+            <Text style={s.totalLabel}>Gesamt:</Text>
+            <Text style={s.totalValue}>{formatEur(totalWithAddons)}</Text>
           </View>
-        )}
 
-        {/* ========== Kleinunternehmer HINT ========== */}
-        <Text style={s.hint}>
-          Hinweis Umsatzsteuerbefreit – Kleinunternehmer gem. § 6 Abs 1 Z 27
-          UStG
-        </Text>
-
-        {/* ========== GESAMT ========== */}
-        <View style={s.totalRow}>
-          <Text style={s.totalLabel}>Gesamt:</Text>
-          <Text style={s.totalValue}>{formatEur(calc.total)}</Text>
+          {/* Kleinunternehmer-Hinweis direkt bei der Summe */}
+          <Text style={s.hint}>
+            Hinweis Umsatzsteuerbefreit – Kleinunternehmer gem. § 6 Abs 1 Z 27 UStG
+          </Text>
         </View>
 
-        {/* ========== TEXT BLOCKS ========== */}
-        <Text style={s.textBlock}>
-          Falls weitere Fragen bestehen zögern Sie nicht uns zu kontaktieren. Die
-          Kontaktdaten sind in der Fußzeile aufzufinden.
-        </Text>
-        <Text style={s.textBlock}>
-          Vielen Dank für Ihr Vertrauen in Plesnicar Solutions.
-        </Text>
+        {/* ========== 3. DETAILLIERTER PROJEKTUMFANG (eigener, gut formatierbarer Block – immer nach der Summe, auf neuer Seite) ========== */}
+        {offer.offer_type !== "bau" && (
+          <View wrap={false} break style={{ marginTop: 16 }}>
+            <Text style={s.sectionTitle}>3. Detaillierter Projektumfang</Text>
+            {renderProjectScope(offer.project_scope || "")}
+          </View>
+        )}
 
         {/* ========== FOOTER ========== */}
         <View style={s.footer} fixed>
@@ -475,6 +606,7 @@ function OfferDocument({
 export default function OfferPDFWrapper({
   offer,
   items,
+  addons = [],
   client,
   calc,
   onClose,
@@ -489,6 +621,7 @@ export default function OfferPDFWrapper({
         <OfferDocument
           offer={offer}
           items={items}
+          addons={addons}
           client={client}
           calc={calc}
           logoUrl={logoUrl}

@@ -52,12 +52,16 @@ export interface Offer {
   maintenance_enabled: boolean;
   maintenance_months: number;
   maintenance_monthly_fee: number;
+  project_scope_short: string | null;
+  project_scope: string | null;
+  project_scope_images: string[] | null;
   total: number;
   currency: string;
   status: "draft" | "sent" | "accepted" | "rejected";
   offer_type?: "it" | "bau";
   created_at: string;
   offer_items?: OfferItem[];
+  offer_addons?: OfferAddon[];
   clients?: Client;
   projects?: Project;
 }
@@ -72,6 +76,16 @@ export interface OfferItem {
   hourly_rate?: number; // Optional for BAU
   discount_percent: number;
   net_total: number;
+}
+
+export interface OfferAddon {
+  id?: string;
+  offer_id?: string;
+  user_id?: string;
+  title: string;
+  description: string | null;
+  price: number;
+  created_at?: string;
 }
 
 export interface TimeEntry {

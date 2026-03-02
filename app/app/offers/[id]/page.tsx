@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/app/app/AuthProvider";
-import { Offer, OfferItem, Client, OFFER_STATUSES } from "@/lib/types";
+import { Offer, OfferItem, OfferAddon, Client, OFFER_STATUSES } from "@/lib/types";
 import { calculateOffer, formatCurrency } from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +60,7 @@ export default function OfferDetailPage() {
   const supabase = createClient();
   const [offer, setOffer] = useState<Offer | null>(null);
   const [items, setItems] = useState<OfferItem[]>([]);
+  const [addons, setAddons] = useState<OfferAddon[]>([]);
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPdf, setShowPdf] = useState(false);
@@ -69,7 +70,7 @@ export default function OfferDetailPage() {
     async function load() {
       const id = params.id as string;
 
-      const [offerRes, itemsRes] = await Promise.all([
+      const [offerRes, itemsRes, addonsRes] = await Promise.all([
         supabase
           .from("offers")
           .select("*, clients(*), projects(title)")
@@ -80,6 +81,7 @@ export default function OfferDetailPage() {
           .select("*")
           .eq("offer_id", id)
           .order("position"),
+        supabase.from("offer_addons").select("*").eq("offer_id", id),
       ]);
 
       if (offerRes.error) {
@@ -90,6 +92,7 @@ export default function OfferDetailPage() {
 
       setOffer(offerRes.data);
       setItems(itemsRes.data || []);
+      setAddons(addonsRes.data || []);
       setClient(offerRes.data.clients as unknown as Client);
       setLoading(false);
     }
@@ -131,6 +134,12 @@ export default function OfferDetailPage() {
       offer.vat_percent
     );
   }, [offer, items]);
+
+  const addonsSum = useMemo(
+    () => addons.reduce((s, a) => s + (Number(a.price) || 0), 0),
+    [addons]
+  );
+  const totalWithAddons = (calc?.total ?? 0) + addonsSum;
 
   async function updateStatus(newStatus: string) {
     if (!canWrite || !offer) return;
@@ -239,11 +248,47 @@ export default function OfferDetailPage() {
           <CardContent className="pt-6">
             <p className="text-xs text-muted-foreground">Gesamt</p>
             <p className="text-2xl font-bold text-primary">
-              {formatCurrency(calc.total)}
+              {formatCurrency(totalWithAddons)}
             </p>
           </CardContent>
         </Card>
       </div>
+
+      {/* Projektumfang */}
+      {offer.offer_type !== "bau" &&
+        (offer.project_scope || (offer as any).project_scope_images?.length) && (
+          <Card className="border-border bg-card">
+            <CardHeader>
+              <CardTitle>Projektumfang</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {offer.project_scope && (
+                <p className="text-sm text-foreground whitespace-pre-wrap">
+                  {offer.project_scope}
+                </p>
+              )}
+              {(offer as any).project_scope_images &&
+                (offer as any).project_scope_images.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {(offer as any).project_scope_images.map(
+                      (img: string, idx: number) => (
+                        <div
+                          key={idx}
+                          className="relative aspect-video rounded-md overflow-hidden border border-border"
+                        >
+                          <img
+                            src={img}
+                            alt={`Projektbild ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+            </CardContent>
+          </Card>
+        )}
 
       {/* Positions */}
       <Card className="border-border bg-card overflow-hidden">
@@ -289,6 +334,24 @@ export default function OfferDetailPage() {
                   </TableCell>
                 </TableRow>
               ))}
+              {addons.map((addon, idx) => (
+                <TableRow key={addon.id} className="border-border">
+                  <TableCell className="text-muted-foreground">
+                    {items.length + idx + 1}
+                  </TableCell>
+                  <TableCell className="font-medium">{addon.title}</TableCell>
+                  {offer.offer_type !== "bau" && (
+                    <>
+                      <TableCell className="text-right">–</TableCell>
+                      <TableCell className="text-right">–</TableCell>
+                      <TableCell className="text-right">–</TableCell>
+                    </>
+                  )}
+                  <TableCell className="text-right font-medium">
+                    {formatCurrency(Number(addon.price))}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
@@ -303,7 +366,7 @@ export default function OfferDetailPage() {
           <div className="max-w-md space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Summe Positionen</span>
-              <span>{formatCurrency(calc.sum_positions)}</span>
+              <span>{formatCurrency(calc.sum_positions + addonsSum)}</span>
             </div>
             {offer.global_discount_percent > 0 && (
               <div className="flex justify-between text-sm">
@@ -357,7 +420,7 @@ export default function OfferDetailPage() {
             <Separator className="bg-border" />
             <div className="flex justify-between text-lg font-bold">
               <span>Gesamt</span>
-              <span className="text-primary">{formatCurrency(calc.total)}</span>
+              <span className="text-primary">{formatCurrency(totalWithAddons)}</span>
             </div>
           </div>
 
@@ -402,6 +465,7 @@ export default function OfferDetailPage() {
         <OfferPDF
           offer={offer}
           items={items}
+          addons={addons}
           client={client}
           calc={calc}
           onClose={() => setShowPdf(false)}

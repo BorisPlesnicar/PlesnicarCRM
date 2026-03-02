@@ -8,6 +8,7 @@ import {
   Project,
   OfferItem,
   Offer,
+  OfferAddon,
   SERVICE_NAMES,
   PACKAGE_PRESETS,
   OFFER_STATUSES,
@@ -16,6 +17,7 @@ import { calculateOffer, formatCurrency, formatNumber } from "@/lib/calculations
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -52,11 +54,11 @@ const defaultItems: OfferItem[] = SERVICE_NAMES.map((name, i) => ({
 export default function EditOfferPage() {
   const params = useParams();
   const router = useRouter();
-  const { canWrite, loading } = useAuth();
+  const { canWrite, loading: authLoading } = useAuth();
   const supabase = createClient();
   const offerId = params.id as string;
 
-  if (!loading && !canWrite) {
+  if (!authLoading && !canWrite) {
     router.replace(`/app/offers/${offerId}`);
     return null;
   }
@@ -76,6 +78,8 @@ export default function EditOfferPage() {
   const [consultantPhone, setConsultantPhone] = useState("");
   const [status, setStatus] = useState<string>("draft");
   const [offerType, setOfferType] = useState<"it" | "bau">("it");
+  const [projectScopeShort, setProjectScopeShort] = useState("");
+  const [projectScope, setProjectScope] = useState("");
 
   // IT Line items
   const [items, setItems] = useState<OfferItem[]>(defaultItems);
@@ -97,6 +101,9 @@ export default function EditOfferPage() {
   const [maintenanceMonths, setMaintenanceMonths] = useState(12);
   const [maintenanceMonthly, setMaintenanceMonthly] = useState(49);
   const [vatPercent, setVatPercent] = useState(0);
+  const [addons, setAddons] = useState<
+    Array<{ id: string; title: string; description: string; price: number }>
+  >([]);
 
   // Convert BAU items to OfferItem format for calculation
   const bauItemsAsOfferItems = useMemo(() => {
@@ -143,7 +150,7 @@ export default function EditOfferPage() {
   useEffect(() => {
     async function load() {
       // Load clients and projects
-      const [clientsRes, projectsRes, offerRes, itemsRes] = await Promise.all([
+      const [clientsRes, projectsRes, offerRes, itemsRes, addonsRes] = await Promise.all([
         supabase.from("clients").select("*").order("name"),
         supabase.from("projects").select("*").order("title"),
         supabase.from("offers").select("*").eq("id", offerId).single(),
@@ -152,6 +159,7 @@ export default function EditOfferPage() {
           .select("*")
           .eq("offer_id", offerId)
           .order("position"),
+        supabase.from("offer_addons").select("*").eq("offer_id", offerId),
       ]);
 
       setClients(clientsRes.data || []);
@@ -184,6 +192,19 @@ export default function EditOfferPage() {
       setMaintenanceMonthly(offer.maintenance_monthly_fee);
       setVatPercent(offer.vat_percent);
       setOfferType((offer.offer_type as "it" | "bau") || "it");
+      setProjectScopeShort(offer.project_scope_short || "");
+      setProjectScope(offer.project_scope || "");
+
+      if (addonsRes.data && addonsRes.data.length > 0) {
+        setAddons(
+          addonsRes.data.map((a: OfferAddon & { id: string }) => ({
+            id: a.id || `addon-${Date.now()}`,
+            title: a.title || "",
+            description: a.description || "",
+            price: Number(a.price) || 0,
+          }))
+        );
+      }
 
       // Load existing items
       if (itemsRes.data && itemsRes.data.length > 0) {
@@ -286,6 +307,31 @@ export default function EditOfferPage() {
     );
   }
 
+  const addonsSum = useMemo(
+    () => addons.reduce((s, a) => s + (Number(a.price) || 0), 0),
+    [addons]
+  );
+  const totalWithAddons = calc.total + addonsSum;
+
+  function addAddon() {
+    setAddons((prev) => [
+      ...prev,
+      { id: Date.now().toString(), title: "", description: "", price: 0 },
+    ]);
+  }
+  function removeAddon(id: string) {
+    setAddons((prev) => prev.filter((a) => a.id !== id));
+  }
+  function updateAddon(
+    id: string,
+    field: "title" | "description" | "price",
+    value: string | number
+  ) {
+    setAddons((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, [field]: value } : a))
+    );
+  }
+
   async function handleSave() {
     if (!clientId) {
       toast.error("Bitte Kunde wählen");
@@ -319,7 +365,10 @@ export default function EditOfferPage() {
         maintenance_enabled: maintenanceEnabled,
         maintenance_months: maintenanceMonths,
         maintenance_monthly_fee: maintenanceMonthly,
-        total: calc.total,
+        project_scope_short: projectScopeShort || null,
+        project_scope: projectScope || null,
+        project_scope_images: null,
+        total: totalWithAddons,
         status,
         offer_type: offerType,
       })
@@ -372,6 +421,26 @@ export default function EditOfferPage() {
         .insert(itemsToInsert);
       if (itemsError) {
         toast.error("Fehler bei Positionen", { description: itemsError.message });
+        setSaving(false);
+        return;
+      }
+    }
+
+    await supabase.from("offer_addons").delete().eq("offer_id", offerId);
+    const addonsToInsert = addons
+      .filter((a) => (a.title || "").trim() && (Number(a.price) || 0) > 0)
+      .map((a) => ({
+        offer_id: offerId,
+        title: a.title.trim(),
+        description: a.description.trim() || null,
+        price: Number(a.price) || 0,
+      }));
+    if (addonsToInsert.length > 0) {
+      const { error: addonsError } = await supabase
+        .from("offer_addons")
+        .insert(addonsToInsert);
+      if (addonsError) {
+        toast.error("Fehler bei weiteren Positionen", { description: addonsError.message });
         setSaving(false);
         return;
       }
@@ -524,6 +593,29 @@ export default function EditOfferPage() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Projektumfang (Kurzfassung, Punkt 1)</Label>
+            <Textarea
+              value={projectScopeShort}
+              onChange={(e) => setProjectScopeShort(e.target.value)}
+              placeholder="Kurzbeschreibung des Projekts (1–3 Sätze)..."
+              className="min-h-[60px] resize-vertical bg-secondary"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Detaillierter Projektumfang (Punkt 3)</Label>
+            <Textarea
+              value={projectScope}
+              onChange={(e) => setProjectScope(e.target.value)}
+              placeholder="Detaillierte Beschreibung, die im PDF unter Punkt 3 (eigene Seite) erscheint..."
+              className="min-h-[120px] resize-vertical bg-secondary"
+            />
+            <p className="text-xs text-muted-foreground">
+              Formatierung im PDF: <code className="rounded bg-muted px-1"># Überschrift</code>,{" "}
+              <code className="rounded bg-muted px-1">## Unterüberschrift</code>,{" "}
+              <code className="rounded bg-muted px-1">**fett**</code>
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Berater</Label>
@@ -774,6 +866,85 @@ export default function EditOfferPage() {
         </TabsContent>
       </Tabs>
 
+      {/* Weitere Positionen (werden an „Leistungen“ angehängt) */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Weitere Positionen</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={addAddon}
+              className="border-border"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Position hinzufügen
+            </Button>
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Z. B. Marketing Plan – erscheinen in der Tabelle „Leistungen“ und in der Summe Positionen.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {addons.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">
+                Keine weiteren Positionen. Klicken Sie auf &quot;Position hinzufügen&quot; (z. B. Marketing Plan).
+              </p>
+            ) : (
+              addons.map((addon) => (
+                <div
+                  key={addon.id}
+                  className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50"
+                >
+                  <div className="flex-1 grid gap-2 sm:grid-cols-2">
+                    <Input
+                      placeholder="Titel (z. B. Marketing Plan)"
+                      value={addon.title}
+                      onChange={(e) => updateAddon(addon.id, "title", e.target.value)}
+                      className="bg-background"
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      placeholder="Preis (€)"
+                      value={addon.price ? addon.price : ""}
+                      onChange={(e) =>
+                        updateAddon(addon.id, "price", parseFloat(e.target.value) || 0)
+                      }
+                      className="bg-background w-32"
+                    />
+                  </div>
+                  <Textarea
+                    placeholder="Beschreibung (optional)"
+                    value={addon.description}
+                    onChange={(e) => updateAddon(addon.id, "description", e.target.value)}
+                    className="min-h-[60px] resize-none bg-background flex-1"
+                    rows={2}
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => removeAddon(addon.id)}
+                    className="flex-shrink-0 text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+          {addonsSum > 0 && (
+            <p className="text-sm font-medium mt-3">
+              Summe (diese Positionen): {formatCurrency(addonsSum)}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Global Controls */}
       <Card className="border-border bg-card">
         <CardHeader>
@@ -912,10 +1083,10 @@ export default function EditOfferPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Calculation */}
             <div className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Summe Positionen</span>
-                <span>{formatCurrency(calc.sum_positions)}</span>
-              </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Summe Positionen</span>
+              <span>{formatCurrency(calc.sum_positions + addonsSum)}</span>
+            </div>
               {globalDiscount > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">
@@ -968,7 +1139,7 @@ export default function EditOfferPage() {
               <Separator className="bg-border" />
               <div className="flex justify-between text-lg font-bold">
                 <span>Gesamt</span>
-                <span className="text-primary">{formatCurrency(calc.total)}</span>
+                <span className="text-primary">{formatCurrency(totalWithAddons)}</span>
               </div>
             </div>
 
