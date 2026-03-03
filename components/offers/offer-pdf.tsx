@@ -343,6 +343,10 @@ function OfferDocument({
         {/* ========== INFO BOX ========== */}
         <View style={s.infoBox}>
           <View style={s.infoRow}>
+            <Text style={s.infoLabel}>Angebots-Nr.:</Text>
+            <Text style={s.infoValue}>{offer.offer_number || "–"}</Text>
+          </View>
+          <View style={s.infoRow}>
             <Text style={s.infoLabel}>Kunde:</Text>
             <Text style={s.infoValue}>
               {client?.name || "–"}
@@ -554,7 +558,7 @@ function OfferDocument({
             )}
           <View style={s.totalRow}>
             <Text style={s.totalLabel}>Gesamt:</Text>
-            <Text style={s.totalValue}>{formatEur(totalWithAddons)}</Text>
+            <Text style={s.totalValue}>{formatEur(totalWithAddons)} €</Text>
           </View>
 
           {/* Kleinunternehmer-Hinweis direkt bei der Summe */}
