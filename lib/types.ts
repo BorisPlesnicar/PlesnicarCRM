@@ -164,13 +164,19 @@ export interface Invoice {
   is_partial_payment: boolean;
   partial_payment_of_total: number | null;
   status: "draft" | "sent" | "paid" | "overdue" | "cancelled";
+  intro_text: string | null;
   notes: string | null;
+  recharged_to_invoice_id: string | null;
+  recharged_to_invoice_ref: string | null;
+  recharged_at: string | null;
+  recharged_note: string | null;
   created_at: string;
   updated_at: string;
   invoice_items?: InvoiceItem[];
   clients?: Client;
   projects?: Project;
   offers?: Offer;
+  recharged_to_invoice?: { invoice_number: string } | null;
 }
 
 export interface InvoiceItem {

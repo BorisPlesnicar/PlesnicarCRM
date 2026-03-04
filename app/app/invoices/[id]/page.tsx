@@ -33,9 +33,19 @@ import {
   Mail,
   CheckCircle2,
   AlertCircle,
-  Clock,
   Send,
+  Receipt,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import dynamic from "next/dynamic";
 import { format, addDays } from "date-fns";
 import { de } from "date-fns/locale";
@@ -73,6 +83,12 @@ export default function InvoiceDetailPage() {
   const [showPdf, setShowPdf] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [creatingReminder, setCreatingReminder] = useState(false);
+  const [showRechargedDialog, setShowRechargedDialog] = useState(false);
+  const [rechargedTargetRef, setRechargedTargetRef] = useState("");
+  const [rechargedNote, setRechargedNote] = useState("");
+  const [rechargedDate, setRechargedDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [savingRecharged, setSavingRecharged] = useState(false);
+  const [rechargedToInvoiceNumber, setRechargedToInvoiceNumber] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -81,7 +97,7 @@ export default function InvoiceDetailPage() {
       const [invoiceRes, itemsRes] = await Promise.all([
         supabase
           .from("invoices")
-          .select("*, clients(*), projects(title), offers(offer_number)")
+          .select("*, clients(*), projects(title), offers(offer_number), recharged_to_invoice:invoices!recharged_to_invoice_id(invoice_number)")
           .eq("id", id)
           .single(),
         supabase
@@ -97,9 +113,24 @@ export default function InvoiceDetailPage() {
         return;
       }
 
-      setInvoice(invoiceRes.data);
+      const inv = invoiceRes.data as Invoice;
+      setInvoice(inv);
       setItems(itemsRes.data || []);
-      setClient(invoiceRes.data.clients as unknown as Client);
+      setClient(inv.clients as unknown as Client);
+      if (inv.recharged_to_invoice_ref) {
+        setRechargedToInvoiceNumber(inv.recharged_to_invoice_ref);
+      } else if (inv.recharged_to_invoice_id && inv.recharged_to_invoice?.invoice_number) {
+        setRechargedToInvoiceNumber(inv.recharged_to_invoice.invoice_number);
+      } else if (inv.recharged_to_invoice_id) {
+        const { data: target } = await supabase
+          .from("invoices")
+          .select("invoice_number")
+          .eq("id", inv.recharged_to_invoice_id)
+          .single();
+        setRechargedToInvoiceNumber(target?.invoice_number ?? null);
+      } else {
+        setRechargedToInvoiceNumber(null);
+      }
       setLoading(false);
     }
     load();
@@ -193,6 +224,54 @@ export default function InvoiceDetailPage() {
     } finally {
       setUpdatingStatus(false);
     }
+  }
+
+  function openRechargedDialog() {
+    setShowRechargedDialog(true);
+    setRechargedTargetRef(
+      invoice?.recharged_to_invoice_ref ?? invoice?.recharged_to_invoice?.invoice_number ?? ""
+    );
+    setRechargedNote(invoice?.recharged_note ?? "");
+    setRechargedDate(
+      invoice?.recharged_at ? format(new Date(invoice.recharged_at), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")
+    );
+  }
+
+  async function saveRecharged() {
+    if (!invoice || !canWrite) return;
+    if (!rechargedTargetRef.trim()) {
+      toast.error("Bitte geben Sie die Rechnung ein, von der weiterverrechnet wurde.");
+      return;
+    }
+    setSavingRecharged(true);
+    const at = rechargedDate ? new Date(rechargedDate).toISOString() : new Date().toISOString();
+    const refText = rechargedTargetRef.trim();
+    const { error } = await supabase
+      .from("invoices")
+      .update({
+        recharged_to_invoice_id: null,
+        recharged_to_invoice_ref: refText,
+        recharged_at: at,
+        recharged_note: rechargedNote.trim() || null,
+      })
+      .eq("id", invoice.id);
+    if (error) {
+      toast.error("Fehler beim Speichern", { description: error.message });
+      setSavingRecharged(false);
+      return;
+    }
+    setRechargedToInvoiceNumber(refText);
+    setInvoice({
+      ...invoice,
+      recharged_to_invoice_id: null,
+      recharged_to_invoice_ref: refText,
+      recharged_at: at,
+      recharged_note: rechargedNote.trim() || null,
+      recharged_to_invoice: { invoice_number: refText },
+    });
+    setShowRechargedDialog(false);
+    setSavingRecharged(false);
+    toast.success("Weiterverrechnet gespeichert");
   }
 
   if (loading || authLoading) {
@@ -443,11 +522,36 @@ export default function InvoiceDetailPage() {
                   <div className="rounded-full bg-green-500/10 p-2">
                     <CheckCircle2 className="h-4 w-4 text-green-400" />
                   </div>
+                  <div className="w-0.5 h-full bg-border mt-2" />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 pb-4">
                   <div className="font-medium text-sm">Rechnung bezahlt</div>
                   <div className="text-xs text-muted-foreground">
                     {format(new Date(invoice.updated_at), "dd.MM.yyyy HH:mm", { locale: de })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Weiterverrechnet */}
+            {(invoice.recharged_to_invoice_id || invoice.recharged_to_invoice_ref) && (
+              <div className="flex gap-4">
+                <div className="flex flex-col items-center">
+                  <div className="rounded-full bg-blue-500/10 p-2">
+                    <Receipt className="h-4 w-4 text-blue-400" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium text-sm">
+                    Weiterverrechnet von Rechnung {rechargedToInvoiceNumber ?? invoice.recharged_to_invoice_ref ?? invoice.recharged_to_invoice?.invoice_number ?? "–"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {invoice.recharged_at
+                      ? format(new Date(invoice.recharged_at), "dd.MM.yyyy", { locale: de })
+                      : "–"}
+                    {invoice.recharged_note && (
+                      <span className="block mt-1 text-muted-foreground">{invoice.recharged_note}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -470,6 +574,16 @@ export default function InvoiceDetailPage() {
             >
               <CheckCircle2 className="mr-2 h-4 w-4" />
               Als bezahlt markieren
+            </Button>
+          )}
+          {canWrite && (
+            <Button
+              variant="outline"
+              className="border-blue-500/20 text-blue-400 hover:bg-blue-500/10"
+              onClick={openRechargedDialog}
+            >
+              <Receipt className="mr-2 h-4 w-4" />
+              Weiterverrechnet
             </Button>
           )}
           {(invoice.status === "sent" || invoice.status === "overdue") && canWrite && (
@@ -553,6 +667,54 @@ export default function InvoiceDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Weiterverrechnet Dialog */}
+      <Dialog open={showRechargedDialog} onOpenChange={setShowRechargedDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Weiterverrechnet</DialogTitle>
+            <DialogDescription>
+              Diese Rechnung wurde von einer anderen Rechnung weiterverrechnet. Geben Sie die Quellrechnung ein (z. B.
+              Rechnungsnummer) und optional Datum sowie Notiz.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Rechnung, von der weiterverrechnet wurde *</Label>
+              <Input
+                value={rechargedTargetRef}
+                onChange={(e) => setRechargedTargetRef(e.target.value)}
+                placeholder="z.B. Rechnungsnummer oder Bezeichnung"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Datum</Label>
+              <Input
+                type="date"
+                value={rechargedDate}
+                onChange={(e) => setRechargedDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Notiz (optional)</Label>
+              <Input
+                value={rechargedNote}
+                onChange={(e) => setRechargedNote(e.target.value)}
+                placeholder="z.B. Teilbetrag, Position X–Y"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRechargedDialog(false)}>
+              Abbrechen
+            </Button>
+            <Button onClick={saveRecharged} disabled={savingRecharged}>
+              {savingRecharged ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Speichern
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* PDF Modal */}
       {showPdf && (

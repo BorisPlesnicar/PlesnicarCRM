@@ -10,6 +10,7 @@ import {
   StyleSheet,
   pdf,
 } from "@react-pdf/renderer";
+import QRCode from "qrcode";
 import { Invoice, InvoiceItem, Client } from "@/lib/types";
 import { formatCurrency } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,46 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
 const RED = "#DC2626";
+
+// EPC QR (SEPA Credit Transfer) – Bankdaten wie im Footer
+const EPC_BCD = "BCD";
+const EPC_VERSION = "002";
+const EPC_CHARSET = "1";
+const EPC_IDENT = "SCT";
+const EPC_BIC = "RLNWATWW426";
+const EPC_NAME = "Boris Plesnicar"; // Kontoinhaber (nicht Firmenname)
+const EPC_IBAN = "AT373242600000081968";
+
+function buildEPCString(
+  totalAmount: number,
+  invoiceNumber: string
+): string {
+  const amount = Math.round(totalAmount * 100) / 100;
+  const eur = `EUR${amount.toFixed(2)}`;
+  const ref = (invoiceNumber || "").trim() || "Rechnung";
+  return [
+    EPC_BCD,
+    EPC_VERSION,
+    EPC_CHARSET,
+    EPC_IDENT,
+    EPC_BIC,
+    EPC_NAME,
+    EPC_IBAN,
+    eur,
+    "",
+    ref,
+    "",
+    "",
+  ].join("\n");
+}
+
+export async function getInvoiceQRDataUrl(
+  totalAmount: number,
+  invoiceNumber: string
+): Promise<string> {
+  const epc = buildEPCString(totalAmount, invoiceNumber);
+  return QRCode.toDataURL(epc, { margin: 1, width: 140, errorCorrectionLevel: "M" });
+}
 
 // Format number with German format (25.000,00)
 function formatNumberDE(value: number, decimals: number = 2): string {
@@ -32,8 +73,8 @@ function formatNumberDE(value: number, decimals: number = 2): string {
 
 const s = StyleSheet.create({
   page: {
-    paddingTop: 40,
-    paddingBottom: 60,
+    paddingTop: 32,
+    paddingBottom: 82,
     paddingHorizontal: 50,
     fontSize: 10,
     fontFamily: "Helvetica",
@@ -45,13 +86,13 @@ const s = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 20,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: 700,
     color: RED,
-    marginBottom: 8,
+    marginBottom: 4,
     letterSpacing: 0.5,
   },
   logoContainer: {
@@ -67,13 +108,13 @@ const s = StyleSheet.create({
     width: "100%",
     height: 3,
     backgroundColor: RED,
-    marginBottom: 20,
+    marginBottom: 14,
   },
   // Sender/Invoice Info Row
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: 14,
   },
   senderInfo: {
     width: "50%",
@@ -85,7 +126,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e5e5e5",
     backgroundColor: "#f9f9f9",
-    padding: 12,
+    padding: 10,
     borderRadius: 2,
   },
   invoiceInfoRow: {
@@ -122,8 +163,8 @@ const s = StyleSheet.create({
   },
   // Recipient
   recipient: {
-    marginBottom: 20,
-    paddingTop: 12,
+    marginBottom: 14,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "#e5e5e5",
   },
@@ -192,6 +233,9 @@ const s = StyleSheet.create({
   colRabatt: { width: "10%", textAlign: "right" },
   colGesamt: { width: "19%", textAlign: "right", fontWeight: "bold" },
   // Totals
+  totalsWrap: {
+    position: "relative",
+  },
   totals: {
     alignItems: "flex-end",
     marginBottom: 18,
@@ -225,40 +269,67 @@ const s = StyleSheet.create({
   legalNote: {
     fontSize: 7.5,
     color: "#666",
-    marginTop: 15,
-    marginBottom: 18,
+    marginTop: 10,
+    marginBottom: 0,
     fontStyle: "italic",
     lineHeight: 1.4,
   },
-  // Footer
+  legalSection: {
+    position: "relative",
+    marginTop: 8,
+  },
+  qrAbsolute: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    alignItems: "flex-start",
+  },
+  qrImage: {
+    width: 72,
+    height: 72,
+    marginBottom: 2,
+  },
+  qrCaption: {
+    fontSize: 6.5,
+    color: "#666",
+  },
+  // Footer (fixed am unteren Seitenrand)
+  footerContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 50,
+    paddingBottom: 22,
+    paddingTop: 12,
+    backgroundColor: "#ffffff",
+  },
   footerBar: {
     width: "100%",
     height: 3,
     backgroundColor: RED,
-    marginBottom: 15,
-    marginTop: 18,
+    marginBottom: 10,
   },
   footer: {
     flexDirection: "row",
     justifyContent: "space-between",
     fontSize: 7.5,
     color: "#666",
-    paddingTop: 12,
   },
   footerColumn: {
-    width: "30%",
+    width: "25%",
   },
   footerTitle: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: "bold",
-    marginBottom: 6,
+    marginBottom: 4,
     color: "#1a1a1a",
     letterSpacing: 0.3,
   },
   footerText: {
-    fontSize: 8,
-    lineHeight: 1.5,
-    marginBottom: 3,
+    fontSize: 7.5,
+    lineHeight: 1.4,
+    marginBottom: 2,
     color: "#555",
   },
 });
@@ -269,9 +340,15 @@ interface InvoicePDFProps {
   client: Client | null;
   onClose: () => void;
   previewMode?: boolean; // If true, show preview instead of download
+  qrDataUrl?: string | null; // QR-Code für SEPA-Zahlung (Betrag + Rechnungsnummer)
 }
 
-function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "onClose" | "previewMode">) {
+function InvoicePDFDocument({
+  invoice,
+  items,
+  client,
+  qrDataUrl,
+}: Omit<InvoicePDFProps, "onClose" | "previewMode">) {
   const invoiceDate = invoice.invoice_date ? new Date(invoice.invoice_date) : new Date();
   const dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date();
 
@@ -329,6 +406,15 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
           <Text style={s.recipientAddress}>{client?.address || ""}</Text>
         </View>
 
+        {/* BAU: Text oberhalb der Leistungen */}
+        {invoice.invoice_type === "bau" && invoice.intro_text && invoice.intro_text.trim() && (
+          <View style={{ marginBottom: 14 }}>
+            <Text style={{ fontSize: 9, lineHeight: 1.5, color: "#333" }}>
+              {invoice.intro_text.trim()}
+            </Text>
+          </View>
+        )}
+
         {/* Table */}
         <View style={s.table}>
           {/* Header */}
@@ -355,49 +441,68 @@ function InvoicePDFDocument({ invoice, items, client }: Omit<InvoicePDFProps, "o
           ))}
         </View>
 
-        {/* Totals */}
-        <View style={s.totals}>
-          <View style={s.totalRow}>
-            <Text style={s.totalLabel}>Nettobetrag:</Text>
-            <Text style={s.totalValue}>{formatNumberDE(invoice.net_amount || 0, 2)} €</Text>
-          </View>
-          <View style={s.totalRow}>
-            <Text style={s.totalLabel}>Umsatzsteuer:</Text>
-            <Text style={s.totalValue}>{formatNumberDE(invoice.vat_amount || 0, 2)} €</Text>
-          </View>
-          <View style={[s.totalRow, { marginTop: 10, borderTopWidth: 2, borderTopColor: "#ddd", paddingTop: 10 }]}>
-            <Text style={[s.totalLabel, { fontSize: 10.5, fontWeight: 700 }]}>Rechnungsbetrag:</Text>
-            <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(invoice.total_amount || 0, 2)} €</Text>
+        {/* Totals + QR auf Höhe Nettobetrag (links) */}
+        <View style={s.totalsWrap}>
+          {qrDataUrl && (
+            <View style={s.qrAbsolute}>
+              <Image style={s.qrImage} src={qrDataUrl} />
+              <Text style={s.qrCaption}>Zahlung mit Banking-App scannen</Text>
+            </View>
+          )}
+          <View style={s.totals}>
+            <View style={s.totalRow}>
+              <Text style={s.totalLabel}>Nettobetrag:</Text>
+              <Text style={s.totalValue}>{formatNumberDE(invoice.net_amount || 0, 2)} €</Text>
+            </View>
+            <View style={s.totalRow}>
+              <Text style={s.totalLabel}>Umsatzsteuer:</Text>
+              <Text style={s.totalValue}>{formatNumberDE(invoice.vat_amount || 0, 2)} €</Text>
+            </View>
+            <View style={[s.totalRow, { marginTop: 10, borderTopWidth: 2, borderTopColor: "#ddd", paddingTop: 10 }]}>
+              <Text style={[s.totalLabel, { fontSize: 10.5, fontWeight: 700 }]}>Rechnungsbetrag:</Text>
+              <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(invoice.total_amount || 0, 2)} €</Text>
+            </View>
           </View>
         </View>
 
-        {/* Legal Note */}
-        <Text style={s.legalNote}>
-          Hinweis: Kleinunternehmer gem. § 6 Abs. 1 Z 27 UStG
-        </Text>
+        {/* Hinweise unverändert im Fluss */}
+        <View style={s.legalSection}>
+          <Text style={s.legalNote}>
+            Hinweis: Kleinunternehmer gem. § 6 Abs. 1 Z 27 UStG
+          </Text>
+          <Text style={s.legalNote}>
+            Die gelieferten Waren bleiben bis zur vollständigen Begleichung des Gegenwertes uneingeschränktes Eigentum der Firma Plesnicar Solutions.
+          </Text>
+        </View>
 
-        {/* Footer */}
-        <View style={s.footerBar} />
-        <View style={s.footer}>
-          <View style={s.footerColumn}>
-            <Text style={s.footerTitle}>Boris Plesnicar e.U.</Text>
-            <Text style={s.footerText}>Hartriegelstraße 12</Text>
-            <Text style={s.footerText}>3550 Langenlois, Österreich</Text>
-            <Text style={s.footerText}>Telefon: 0664/4678382 / 0676/3206308</Text>
-            <Text style={s.footerText}>Kleinunternehmer</Text>
-          </View>
-          <View style={s.footerColumn}>
-            <Text style={s.footerTitle}>Kontaktinformation</Text>
-            <Text style={s.footerText}>Boris Plesnicar</Text>
-            <Text style={s.footerText}>Email: plesnicaroffice@gmail.com</Text>
-            <Text style={s.footerText}>www.plesnicarsolutions.at</Text>
-          </View>
-          <View style={s.footerColumn}>
-            <Text style={s.footerTitle}>Bankverbindung</Text>
-            <Text style={s.footerText}>Kontoname: Boris Plesnicar</Text>
-            <Text style={s.footerText}>Geldinstitut: Raiba Langenlois</Text>
-            <Text style={s.footerText}>IBAN: AT373242600000081968</Text>
-            <Text style={s.footerText}>SWIFT/BIC: RLNWATWW426</Text>
+        {/* Footer – fixed am unteren Seitenrand, gleiche Position auf jeder Seite */}
+        <View fixed style={s.footerContainer}>
+          <View style={s.footerBar} />
+          <View style={s.footer}>
+            <View style={s.footerColumn}>
+              <Text style={s.footerTitle}>Plesnicar Solutions</Text>
+              <Text style={s.footerText}>Hartriegelstraße 12</Text>
+              <Text style={s.footerText}>3550 Langenlois</Text>
+              <Text style={s.footerText}>Österreich</Text>
+              <Text style={s.footerText}>GF Boris Plesnicar</Text>
+            </View>
+            <View style={s.footerColumn}>
+              <Text style={s.footerTitle}>Kontaktinformation</Text>
+              <Text style={s.footerText}>Boris Plesnicar</Text>
+              <Text style={s.footerText}>Telefon +43 664 4678382</Text>
+              <Text style={s.footerText}>Email: plesnicaroffice@gmail.com</Text>
+              <Text style={s.footerText}>www.plesnicarsolutions.at</Text>
+            </View>
+            <View style={s.footerColumn}>
+              <Text style={s.footerTitle}>Bankverbindung</Text>
+              <Text style={s.footerText}>Raiba Langenlois</Text>
+              <Text style={s.footerText}>AT37 3242 6000 0008 1968</Text>
+              <Text style={s.footerText}>BIC: RLNWATWW426</Text>
+            </View>
+            <View style={s.footerColumn}>
+              <Text style={s.footerTitle}>Gerichtsstand</Text>
+              <Text style={s.footerText}>3500 Krems a.d. Donau</Text>
+            </View>
           </View>
         </View>
       </Page>
@@ -412,7 +517,18 @@ export default function InvoicePDF({ invoice, items, client, onClose, previewMod
   async function handleDownload() {
     setGenerating(true);
     try {
-      const doc = <InvoicePDFDocument invoice={invoice} items={items} client={client} />;
+      const qrDataUrl = await getInvoiceQRDataUrl(
+        invoice.total_amount ?? 0,
+        invoice.invoice_number ?? ""
+      );
+      const doc = (
+        <InvoicePDFDocument
+          invoice={invoice}
+          items={items}
+          client={client}
+          qrDataUrl={qrDataUrl}
+        />
+      );
       const asPdf = pdf(doc);
       const blob = await asPdf.toBlob();
       const url = URL.createObjectURL(blob);

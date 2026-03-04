@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Client, Project, Offer, InvoiceItem } from "@/lib/types";
+import { Client, Project, Offer, InvoiceItem, Invoice } from "@/lib/types";
 import { formatCurrency } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,21 +18,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
-import { Invoice } from "@/lib/types";
+import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/app/app/AuthProvider";
-
-const InvoicePDF = dynamic(() => import("@/components/invoices/invoice-pdf"), {
-  ssr: false,
-});
 import { Loader2, ArrowLeft, Save, Plus, Trash2, Calculator, Eye } from "lucide-react";
 import { addDays, format } from "date-fns";
 import dynamic from "next/dynamic";
 
-export default function NewInvoicePage() {
+const InvoicePDF = dynamic(() => import("@/components/invoices/invoice-pdf"), {
+  ssr: false,
+});
+
+export default function EditInvoicePage() {
+  const params = useParams();
   const router = useRouter();
   const supabase = createClient();
   const { canWrite, loading: authLoading } = useAuth();
+  const invoiceId = params.id as string;
 
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -41,7 +42,6 @@ export default function NewInvoicePage() {
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
-  // Form state
   const [clientId, setClientId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [offerId, setOfferId] = useState("");
@@ -55,26 +55,13 @@ export default function NewInvoicePage() {
   const [invoiceType, setInvoiceType] = useState<"it" | "bau">("it");
   const [bauIntroText, setBauIntroText] = useState("");
 
-  // IT Items
   const [items, setItems] = useState<InvoiceItem[]>([
-    {
-      position: 1,
-      description: "",
-      quantity: 1,
-      unit: "Stk",
-      unit_price: 0,
-      vat_percent: 0,
-      discount_percent: 0,
-      total: 0,
-    },
+    { position: 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 },
   ]);
-
-  // BAU Items (dynamic)
   const [bauItems, setBauItems] = useState<
     Array<{ id: string; description: string; quantity: number; unit: string; price: number }>
   >([{ id: "1", description: "", quantity: 1, unit: "Stk", price: 0 }]);
 
-  // Convert BAU items to InvoiceItem format for calculation
   const bauItemsAsInvoiceItems = useMemo(() => {
     return bauItems.map((item, idx) => ({
       position: idx + 1,
@@ -88,7 +75,6 @@ export default function NewInvoicePage() {
     }));
   }, [bauItems]);
 
-  // Calculations
   const calc = useMemo(() => {
     const itemsToUse = invoiceType === "it" ? items : bauItemsAsInvoiceItems;
     const netAmount = itemsToUse.reduce((sum, item) => sum + item.total, 0);
@@ -97,21 +83,18 @@ export default function NewInvoicePage() {
     return { netAmount, vatAmount, totalAmount };
   }, [items, bauItemsAsInvoiceItems, invoiceType, vatPercent]);
 
-  // Create draft invoice for preview
   const draftInvoice = useMemo((): Partial<Invoice> => {
-    const selectedClient = clients.find((c) => c.id === clientId);
     const dueDate = addDays(new Date(invoiceDate), paymentTermDays);
-    
     return {
-      id: "draft",
+      id: invoiceId,
       invoice_number: invoiceNumber || "DRAFT",
       invoice_date: invoiceDate,
       due_date: format(dueDate, "yyyy-MM-dd"),
       payment_term_days: paymentTermDays,
       customer_number: customerNumber || null,
-        invoice_type: invoiceType,
-        intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
-        net_amount: calc.netAmount,
+      invoice_type: invoiceType,
+      intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
+      net_amount: calc.netAmount,
       vat_amount: calc.vatAmount,
       total_amount: calc.totalAmount,
       vat_percent: vatPercent,
@@ -124,6 +107,7 @@ export default function NewInvoicePage() {
       offer_id: offerId && offerId !== "none" ? offerId : null,
     } as Partial<Invoice>;
   }, [
+    invoiceId,
     clientId,
     invoiceNumber,
     invoiceDate,
@@ -139,7 +123,6 @@ export default function NewInvoicePage() {
     offerId,
   ]);
 
-  // Get items for preview
   const previewItems = useMemo(() => {
     const itemsToUse = invoiceType === "it" ? items : bauItemsAsInvoiceItems;
     return itemsToUse.filter((item) => item.description.trim());
@@ -147,67 +130,85 @@ export default function NewInvoicePage() {
 
   useEffect(() => {
     async function load() {
-      const [clientsRes, projectsRes, offersRes] = await Promise.all([
+      const [invoiceRes, itemsRes, clientsRes, projectsRes, offersRes] = await Promise.all([
+        supabase.from("invoices").select("*").eq("id", invoiceId).single(),
+        supabase.from("invoice_items").select("*").eq("invoice_id", invoiceId).order("position"),
         supabase.from("clients").select("*").order("name"),
         supabase.from("projects").select("*").order("title"),
         supabase.from("offers").select("*").eq("status", "accepted").order("created_at", { ascending: false }),
       ]);
+
+      if (invoiceRes.error || !invoiceRes.data) {
+        toast.error("Rechnung nicht gefunden");
+        router.push("/app/invoices");
+        return;
+      }
+
+      const inv = invoiceRes.data as Invoice;
       setClients(clientsRes.data || []);
       setProjects(projectsRes.data || []);
       setOffers(offersRes.data || []);
+      setClientId(inv.client_id);
+      setProjectId(inv.project_id || "none");
+      setOfferId(inv.offer_id || "none");
+      setInvoiceNumber(inv.invoice_number);
+      setInvoiceDate(inv.invoice_date);
+      setPaymentTermDays(inv.payment_term_days ?? 14);
+      setCustomerNumber(inv.customer_number || "");
+      setVatPercent(inv.vat_percent ?? 0);
+      setIsPartialPayment(inv.is_partial_payment ?? false);
+      setPartialPaymentOfTotal(inv.partial_payment_of_total != null ? String(inv.partial_payment_of_total) : "");
+      setInvoiceType((inv.invoice_type as "it" | "bau") || "it");
+      setBauIntroText(inv.intro_text || "");
 
-      // Auto-generate invoice number in format BP-2248-XX
-      // Find the highest existing invoice number suffix
-      const { data: existingInvoices } = await supabase
-        .from("invoices")
-        .select("invoice_number")
-        .like("invoice_number", "BP-2248-%");
-      
-      let nextSuffix = 1;
-      if (existingInvoices && existingInvoices.length > 0) {
-        const suffixes = existingInvoices
-          .map((inv) => {
-            const match = inv.invoice_number.match(/BP-2248-(\d+)/);
-            return match ? parseInt(match[1], 10) : 0;
-          })
-          .filter((n) => n > 0);
-        nextSuffix = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 2;
+      const loadedItems = (itemsRes.data || []) as InvoiceItem[];
+      if (inv.invoice_type === "bau") {
+        setBauItems(
+          loadedItems.length > 0
+            ? loadedItems.map((it, idx) => ({
+                id: String(idx + 1),
+                description: it.description,
+                quantity: it.quantity,
+                unit: it.unit,
+                price: it.unit_price,
+              }))
+            : [{ id: "1", description: "", quantity: 1, unit: "Stk", price: 0 }]
+        );
+        setItems([{ position: 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 }]);
       } else {
-        // If no invoices exist, start at 02 (since 01 already exists)
-        nextSuffix = 2;
+        setItems(
+          loadedItems.length > 0
+            ? loadedItems.map((it) => ({
+                position: it.position,
+                description: it.description,
+                quantity: it.quantity,
+                unit: it.unit,
+                unit_price: it.unit_price,
+                vat_percent: it.vat_percent,
+                discount_percent: it.discount_percent,
+                total: it.total,
+              }))
+            : [{ position: 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 }]
+        );
+        setBauItems([{ id: "1", description: "", quantity: 1, unit: "Stk", price: 0 }]);
       }
-      setInvoiceNumber(`BP-2248-${String(nextSuffix).padStart(2, "0")}`);
-
       setLoading(false);
     }
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [invoiceId, router, supabase]);
 
-  // Update customer number when client changes
   useEffect(() => {
-    if (clientId) {
+    if (clientId && clients.length) {
       const client = clients.find((c) => c.id === clientId);
-      if (client?.customer_number) {
-        setCustomerNumber(client.customer_number);
-      }
+      if (client?.customer_number) setCustomerNumber(client.customer_number);
     }
   }, [clientId, clients]);
-
-  // Update due date when invoice date or payment term changes
-  useEffect(() => {
-    if (invoiceDate && paymentTermDays) {
-      const dueDate = addDays(new Date(invoiceDate), paymentTermDays);
-      // This will be set when saving
-    }
-  }, [invoiceDate, paymentTermDays]);
 
   function updateItem(index: number, field: keyof InvoiceItem, value: number | string) {
     setItems((prev) =>
       prev.map((item, i) => {
         if (i !== index) return item;
         const updated = { ...item, [field]: value };
-        // Recalculate total
         const quantity = typeof updated.quantity === "number" ? updated.quantity : parseFloat(String(updated.quantity)) || 0;
         const unitPrice = typeof updated.unit_price === "number" ? updated.unit_price : parseFloat(String(updated.unit_price)) || 0;
         const discount = typeof updated.discount_percent === "number" ? updated.discount_percent : parseFloat(String(updated.discount_percent)) || 0;
@@ -220,16 +221,7 @@ export default function NewInvoicePage() {
   function addItem() {
     setItems((prev) => [
       ...prev,
-      {
-        position: prev.length + 1,
-        description: "",
-        quantity: 1,
-        unit: "Stk",
-        unit_price: 0,
-        vat_percent: 0,
-        discount_percent: 0,
-        total: 0,
-      },
+      { position: prev.length + 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 },
     ]);
   }
 
@@ -237,73 +229,53 @@ export default function NewInvoicePage() {
     setItems((prev) => prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, position: i + 1 })));
   }
 
-  // BAU functions
   function addBauItem() {
-    setBauItems((prev) => [
-      ...prev,
-      { id: Date.now().toString(), description: "", quantity: 1, unit: "Stk", price: 0 },
-    ]);
+    setBauItems((prev) => [...prev, { id: Date.now().toString(), description: "", quantity: 1, unit: "Stk", price: 0 }]);
   }
 
   function removeBauItem(id: string) {
     setBauItems((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function updateBauItem(
-    id: string,
-    field: "description" | "quantity" | "unit" | "price",
-    value: string | number
-  ) {
-    setBauItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
-      )
-    );
+  function updateBauItem(id: string, field: "description" | "quantity" | "unit" | "price", value: string | number) {
+    setBauItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
   }
 
-  // Load items from offer
   function loadFromOffer() {
-    // "none" = explizit kein Angebot gewählt
     if (!offerId || offerId === "none") return;
     const offer = offers.find((o) => o.id === offerId);
     if (!offer) return;
-
-    // Set invoice type based on offer type
-    if (offer.offer_type) {
-      setInvoiceType(offer.offer_type);
-    }
-
-    // Load offer items
+    if (offer.offer_type) setInvoiceType(offer.offer_type);
     supabase
       .from("offer_items")
       .select("*")
       .eq("offer_id", offerId)
       .order("position")
       .then(({ data }) => {
-        if (data && data.length > 0) {
+        if (data?.length) {
           if (offer.offer_type === "bau") {
-            // BAU: use as BAU items
-            const bauItemsData = data.map((item, idx) => ({
-              id: (idx + 1).toString(),
-              description: item.service_name,
-              quantity: 1,
-              unit: "Stk",
-              price: item.net_total || 0,
-            }));
-            setBauItems(bauItemsData);
+            setBauItems(
+              data.map((item, idx) => ({
+                id: String(idx + 1),
+                description: item.service_name,
+                quantity: 1,
+                unit: "Stk",
+                price: item.net_total || 0,
+              }))
+            );
           } else {
-            // IT: use as IT items
-            const invoiceItems: InvoiceItem[] = data.map((item, idx) => ({
-              position: idx + 1,
-              description: item.service_name,
-              quantity: 1,
-              unit: "Stk",
-              unit_price: item.net_total || 0,
-              vat_percent: offer.vat_percent || 0,
-              discount_percent: 0,
-              total: item.net_total || 0,
-            }));
-            setItems(invoiceItems);
+            setItems(
+              data.map((item, idx) => ({
+                position: idx + 1,
+                description: item.service_name,
+                quantity: 1,
+                unit: "Stk",
+                unit_price: item.net_total || 0,
+                vat_percent: offer.vat_percent || 0,
+                discount_percent: 0,
+                total: item.net_total || 0,
+              }))
+            );
           }
           setVatPercent(offer.vat_percent || 0);
           toast.success("Positionen vom Angebot übernommen");
@@ -316,15 +288,12 @@ export default function NewInvoicePage() {
       toast.error("Bitte wählen Sie einen Kunden");
       return;
     }
-    
-    // Validate items based on invoice type
     if (invoiceType === "it") {
       if (items.length === 0 || items.every((i) => !i.description.trim())) {
         toast.error("Bitte fügen Sie mindestens eine Position hinzu");
         return;
       }
     } else {
-      // BAU
       if (bauItems.length === 0 || bauItems.every((i) => !i.description.trim() || i.price <= 0)) {
         toast.error("Bitte fügen Sie mindestens eine Position mit Beschreibung und Preis hinzu");
         return;
@@ -332,15 +301,12 @@ export default function NewInvoicePage() {
     }
 
     setSaving(true);
-
     const dueDate = addDays(new Date(invoiceDate), paymentTermDays);
 
-    const { data: invoice, error: invoiceError } = await supabase
+    const { error: updateError } = await supabase
       .from("invoices")
-      .insert({
+      .update({
         client_id: clientId,
-        // "none" oder leerer String sollen als NULL gespeichert werden,
-        // sonst versucht Postgres, 'none' als UUID zu parsen.
         project_id: !projectId || projectId === "none" ? null : projectId,
         offer_id: !offerId || offerId === "none" ? null : offerId,
         invoice_number: invoiceNumber,
@@ -356,24 +322,23 @@ export default function NewInvoicePage() {
         vat_percent: vatPercent,
         is_partial_payment: isPartialPayment,
         partial_payment_of_total: isPartialPayment && partialPaymentOfTotal ? parseFloat(partialPaymentOfTotal) : null,
-        status: "draft",
       })
-      .select()
-      .single();
+      .eq("id", invoiceId);
 
-    if (invoiceError) {
-      toast.error("Fehler beim Speichern", { description: invoiceError.message });
+    if (updateError) {
+      toast.error("Fehler beim Speichern", { description: updateError.message });
       setSaving(false);
       return;
     }
 
-    // Insert items - use appropriate items based on type
-    let itemsToInsert: any[] = [];
+    await supabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
+
+    let itemsToInsert: Record<string, unknown>[] = [];
     if (invoiceType === "it") {
       itemsToInsert = items
         .filter((item) => item.description.trim())
         .map((item) => ({
-          invoice_id: invoice.id,
+          invoice_id: invoiceId,
           position: item.position,
           description: item.description,
           quantity: item.quantity,
@@ -384,11 +349,10 @@ export default function NewInvoicePage() {
           total: item.total,
         }));
     } else {
-      // BAU
       itemsToInsert = bauItems
         .filter((item) => item.description.trim() && item.price > 0)
         .map((item, idx) => ({
-          invoice_id: invoice.id,
+          invoice_id: invoiceId,
           position: idx + 1,
           description: item.description,
           quantity: item.quantity,
@@ -401,9 +365,7 @@ export default function NewInvoicePage() {
     }
 
     if (itemsToInsert.length > 0) {
-      const { error: itemsError } = await supabase
-        .from("invoice_items")
-        .insert(itemsToInsert);
+      const { error: itemsError } = await supabase.from("invoice_items").insert(itemsToInsert);
       if (itemsError) {
         toast.error("Fehler bei Positionen", { description: itemsError.message });
         setSaving(false);
@@ -411,21 +373,12 @@ export default function NewInvoicePage() {
       }
     }
 
-    toast.success("Rechnung erstellt");
-    router.push(`/app/invoices/${invoice.id}`);
+    toast.success("Rechnung gespeichert");
+    router.push(`/app/invoices/${invoiceId}`);
   }
 
-  const filteredProjects = projectId
-    ? projects
-    : clientId
-      ? projects.filter((p) => p.client_id === clientId)
-      : projects;
-
-  const filteredOffers = offerId
-    ? offers
-    : clientId
-      ? offers.filter((o) => o.client_id === clientId)
-      : offers;
+  const filteredProjects = projectId ? projects : clientId ? projects.filter((p) => p.client_id === clientId) : projects;
+  const filteredOffers = offerId ? offers : clientId ? offers.filter((o) => o.client_id === clientId) : offers;
 
   if (loading || authLoading) {
     return (
@@ -436,73 +389,36 @@ export default function NewInvoicePage() {
   }
 
   if (!canWrite) {
-    return (
-      <div className="space-y-4">
-        <Button variant="ghost" onClick={() => router.push("/app/invoices")}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Zurück
-        </Button>
-        <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-700">
-          <p className="font-semibold mb-1">Nur Lesezugriff</p>
-          <p>
-            Sie sind als View Moderator angemeldet. Das Erstellen neuer Rechnungen ist in diesem Modus nicht
-            erlaubt.
-          </p>
-        </div>
-      </div>
-    );
+    router.replace(`/app/invoices/${invoiceId}`);
+    return null;
   }
 
   return (
     <div className="space-y-6 pb-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.push("/app/invoices")}>
+          <Button variant="ghost" onClick={() => router.push(`/app/invoices/${invoiceId}`)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Zurück
           </Button>
-          <h1 className="text-2xl font-bold text-foreground">Neue Rechnung</h1>
+          <h1 className="text-2xl font-bold text-foreground">Rechnung bearbeiten</h1>
         </div>
         <div className="flex gap-2">
           <Button
-            onClick={() => {
-              if (!clientId) {
-                toast.error("Bitte wählen Sie einen Kunden für die Vorschau");
-                return;
-              }
-              if (previewItems.length === 0) {
-                toast.error("Bitte fügen Sie mindestens eine Position hinzu");
-                return;
-              }
-              setShowPreview(true);
-            }}
             variant="outline"
             disabled={!clientId || previewItems.length === 0}
+            onClick={() => setShowPreview(true)}
           >
             <Eye className="mr-2 h-4 w-4" />
             Vorschau
           </Button>
-          <Button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-primary text-primary-foreground hover:bg-red-700"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Speichere...
-              </>
-            ) : (
-              <>
-                <Save className="mr-2 h-4 w-4" />
-                Speichern
-              </>
-            )}
+          <Button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground hover:bg-red-700">
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            {saving ? "Speichere..." : "Speichern"}
           </Button>
         </div>
       </div>
 
-      {/* Invoice Type Tabs */}
       <Card className="border-border bg-card">
         <CardContent className="pt-6">
           <Tabs value={invoiceType} onValueChange={(v) => setInvoiceType(v as "it" | "bau")}>
@@ -515,9 +431,7 @@ export default function NewInvoicePage() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left Column - Form */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Basic Info */}
           <Card className="border-border bg-card">
             <CardHeader>
               <CardTitle>Rechnungsinformationen</CardTitle>
@@ -584,11 +498,7 @@ export default function NewInvoicePage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Rechnungsdatum</Label>
-                  <Input
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                  />
+                  <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Zahlungsziel (Tage)</Label>
@@ -606,7 +516,6 @@ export default function NewInvoicePage() {
             </CardContent>
           </Card>
 
-          {/* Items */}
           <Tabs value={invoiceType} onValueChange={(v) => setInvoiceType(v as "it" | "bau")}>
             <TabsContent value="it" className="space-y-0">
               <Card className="border-border bg-card">
@@ -642,11 +551,7 @@ export default function NewInvoicePage() {
                       </div>
                       <div className="space-y-2">
                         <Label>Einheit</Label>
-                        <Input
-                          value={item.unit}
-                          onChange={(e) => updateItem(index, "unit", e.target.value)}
-                          placeholder="Stk"
-                        />
+                        <Input value={item.unit} onChange={(e) => updateItem(index, "unit", e.target.value)} placeholder="Stk" />
                       </div>
                       <div className="space-y-2">
                         <Label>Einheitspreis</Label>
@@ -671,12 +576,7 @@ export default function NewInvoicePage() {
                         <div className="font-semibold">{formatCurrency(item.total)}</div>
                       </div>
                       <div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeItem(index)}
-                          className="text-red-400"
-                        >
+                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} className="text-red-400">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -710,11 +610,7 @@ export default function NewInvoicePage() {
                     <Calculator className="h-5 w-5" />
                     Leistungen
                   </CardTitle>
-                  <Button
-                    size="sm"
-                    onClick={addBauItem}
-                    className="bg-primary text-primary-foreground hover:bg-red-700"
-                  >
+                  <Button size="sm" onClick={addBauItem} className="bg-primary text-primary-foreground hover:bg-red-700">
                     <Plus className="mr-2 h-4 w-4" />
                     Zeile hinzufügen
                   </Button>
@@ -722,20 +618,13 @@ export default function NewInvoicePage() {
                 <CardContent>
                   <div className="space-y-3">
                     {bauItems.map((item, idx) => (
-                      <div
-                        key={item.id}
-                        className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50"
-                      >
-                        <div className="flex-shrink-0 pt-2 text-sm text-muted-foreground w-8">
-                          {idx + 1}.
-                        </div>
+                      <div key={item.id} className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50">
+                        <div className="flex-shrink-0 pt-2 text-sm text-muted-foreground w-8">{idx + 1}.</div>
                         <div className="flex-1 space-y-2">
                           <Input
                             placeholder="Leistungsbeschreibung..."
                             value={item.description}
-                            onChange={(e) =>
-                              updateBauItem(item.id, "description", e.target.value)
-                            }
+                            onChange={(e) => updateBauItem(item.id, "description", e.target.value)}
                             className="bg-background"
                           />
                           <div className="flex gap-2 items-center">
@@ -745,21 +634,13 @@ export default function NewInvoicePage() {
                               step="0.01"
                               placeholder="Anzahl"
                               value={item.quantity || ""}
-                              onChange={(e) =>
-                                updateBauItem(
-                                  item.id,
-                                  "quantity",
-                                  parseFloat(e.target.value) || 1
-                                )
-                              }
+                              onChange={(e) => updateBauItem(item.id, "quantity", parseFloat(e.target.value) || 1)}
                               className="bg-background w-24"
                             />
                             <Input
                               placeholder="Einheit"
                               value={item.unit}
-                              onChange={(e) =>
-                                updateBauItem(item.id, "unit", e.target.value)
-                              }
+                              onChange={(e) => updateBauItem(item.id, "unit", e.target.value)}
                               className="bg-background w-24"
                             />
                             <Input
@@ -768,13 +649,7 @@ export default function NewInvoicePage() {
                               step="0.01"
                               placeholder="Preis (€)"
                               value={item.price || ""}
-                              onChange={(e) =>
-                                updateBauItem(
-                                  item.id,
-                                  "price",
-                                  parseFloat(e.target.value) || 0
-                                )
-                              }
+                              onChange={(e) => updateBauItem(item.id, "price", parseFloat(e.target.value) || 0)}
                               className="bg-background w-32"
                             />
                             <span className="text-sm text-muted-foreground">
@@ -800,7 +675,6 @@ export default function NewInvoicePage() {
           </Tabs>
         </div>
 
-        {/* Right Column - Summary */}
         <div className="space-y-6">
           <Card className="border-border bg-card">
             <CardHeader>
@@ -818,10 +692,7 @@ export default function NewInvoicePage() {
               </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Switch
-                    checked={isPartialPayment}
-                    onCheckedChange={setIsPartialPayment}
-                  />
+                  <Switch checked={isPartialPayment} onCheckedChange={setIsPartialPayment} />
                   <Label>Teilanzahlung</Label>
                 </div>
                 {isPartialPayment && (
@@ -856,7 +727,6 @@ export default function NewInvoicePage() {
         </div>
       </div>
 
-      {/* PDF Preview Modal */}
       {showPreview && (
         <InvoicePDF
           invoice={draftInvoice}
