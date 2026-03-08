@@ -10,6 +10,8 @@ import {
   Offer,
   OfferAddon,
   OFFER_STATUSES,
+  SERVICE_NAMES,
+  PACKAGE_PRESETS,
 } from "@/lib/types";
 import { calculateOffer, formatCurrency } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
@@ -65,6 +67,7 @@ export default function EditOfferPage() {
   const [consultantPhone, setConsultantPhone] = useState("");
   const [status, setStatus] = useState<string>("draft");
   const [offerType, setOfferType] = useState<"it" | "bau">("it");
+  const [packagePreset, setPackagePreset] = useState<string>("");
   const [projectScopeShort, setProjectScopeShort] = useState("");
   const [projectScope, setProjectScope] = useState("");
 
@@ -276,6 +279,22 @@ export default function EditOfferPage() {
   function removeItem(index: number) {
     setItems((prev) =>
       prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, position: i + 1 }))
+    );
+  }
+
+  function applyPackagePreset(presetKey: string) {
+    const preset = PACKAGE_PRESETS[presetKey];
+    if (!preset) return;
+    const rate = items[0]?.hourly_rate ?? 55;
+    setItems(
+      SERVICE_NAMES.map((name, i) => ({
+        position: i + 1,
+        service_name: name,
+        hours: preset.hours[i] ?? 0,
+        hourly_rate: rate,
+        discount_percent: 0,
+        net_total: (preset.hours[i] ?? 0) * rate,
+      }))
     );
   }
 
@@ -588,6 +607,36 @@ export default function EditOfferPage() {
           {/* Positionen – 1:1 wie Rechnung: Kartenzeilen mit Bezeichnung, Anzahl, Einheit, Einheitspreis, Rabatt %, Gesamt */}
           <Tabs value={offerType} onValueChange={(v) => setOfferType(v as "it" | "bau")}>
             <TabsContent value="it" className="space-y-0">
+              <Card className="border-border bg-card mb-4">
+                <CardHeader>
+                  <CardTitle className="text-base">Paket-Vorgabe (IT)</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Wählen Sie ein Paket, um Positionen und Stunden vorzubelegen. Anschließend können Sie Werte anpassen.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <Select
+                    value={packagePreset || "none"}
+                    onValueChange={(v) => {
+                      const key = v === "none" ? "" : v;
+                      setPackagePreset(key);
+                      if (key) applyPackagePreset(key);
+                    }}
+                  >
+                    <SelectTrigger className="max-w-xs">
+                      <SelectValue placeholder="Paket wählen (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Manuell / ohne Vorgabe</SelectItem>
+                      {Object.entries(PACKAGE_PRESETS).map(([key, p]) => (
+                        <SelectItem key={key} value={key}>
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </CardContent>
+              </Card>
               <Card className="border-border bg-card">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
