@@ -48,6 +48,8 @@ export default function NewInvoicePage() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [paymentTermDays, setPaymentTermDays] = useState(14);
+  const [skontoDays, setSkontoDays] = useState<number | null>(null);
+  const [skontoPercent, setSkontoPercent] = useState<number | null>(null);
   const [customerNumber, setCustomerNumber] = useState("");
   const [vatPercent, setVatPercent] = useState(0);
   const [isPartialPayment, setIsPartialPayment] = useState(false);
@@ -108,6 +110,8 @@ export default function NewInvoicePage() {
       invoice_date: invoiceDate,
       due_date: format(dueDate, "yyyy-MM-dd"),
       payment_term_days: paymentTermDays,
+      skonto_days: skontoDays ?? null,
+      skonto_percent: skontoPercent ?? null,
       customer_number: customerNumber || null,
         invoice_type: invoiceType,
         intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
@@ -128,6 +132,8 @@ export default function NewInvoicePage() {
     invoiceNumber,
     invoiceDate,
     paymentTermDays,
+    skontoDays,
+    skontoPercent,
     customerNumber,
     invoiceType,
     bauIntroText,
@@ -233,6 +239,22 @@ export default function NewInvoicePage() {
     ]);
   }
 
+  function insertItem(index: number) {
+    setItems((prev) => {
+      const blank = {
+        position: index + 1,
+        description: "",
+        quantity: 1,
+        unit: "Stk",
+        unit_price: 0,
+        vat_percent: 0,
+        discount_percent: 0,
+        total: 0,
+      };
+      return [...prev.slice(0, index), blank, ...prev.slice(index)].map((item, i) => ({ ...item, position: i + 1 }));
+    });
+  }
+
   function removeItem(index: number) {
     setItems((prev) => prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, position: i + 1 })));
   }
@@ -242,6 +264,14 @@ export default function NewInvoicePage() {
     setBauItems((prev) => [
       ...prev,
       { id: Date.now().toString(), description: "", quantity: 1, unit: "Stk", price: 0 },
+    ]);
+  }
+
+  function insertBauItem(index: number) {
+    setBauItems((prev) => [
+      ...prev.slice(0, index),
+      { id: Date.now().toString(), description: "", quantity: 1, unit: "Stk", price: 0 },
+      ...prev.slice(index),
     ]);
   }
 
@@ -347,6 +377,8 @@ export default function NewInvoicePage() {
         invoice_date: invoiceDate,
         due_date: format(dueDate, "yyyy-MM-dd"),
         payment_term_days: paymentTermDays,
+        skonto_days: skontoDays ?? null,
+        skonto_percent: skontoPercent ?? null,
         customer_number: customerNumber || null,
         invoice_type: invoiceType,
         intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
@@ -591,7 +623,28 @@ export default function NewInvoicePage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Zahlungsziel (Tage)</Label>
+                  <Label>Zahlungsziel mit Skonto (Tage)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="z.B. 10 (leer = kein Skonto)"
+                    value={skontoDays ?? ""}
+                    onChange={(e) => setSkontoDays(e.target.value === "" ? null : parseInt(e.target.value, 10) || null)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Skonto (%)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="z.B. 3 (leer = kein Skonto)"
+                    value={skontoPercent ?? ""}
+                    onChange={(e) => setSkontoPercent(e.target.value === "" ? null : parseFloat(e.target.value) || null)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Zahlungsziel ohne Skonto (Tage)</Label>
                   <Input
                     type="number"
                     value={paymentTermDays}
@@ -671,14 +724,20 @@ export default function NewInvoicePage() {
                         <div className="font-semibold">{formatCurrency(item.total)}</div>
                       </div>
                       <div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeItem(index)}
-                          className="text-red-400"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => insertItem(index)} title="Zeile darüber einfügen">
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeItem(index)}
+                            className="text-red-400"
+                            title="Zeile löschen"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -782,15 +841,21 @@ export default function NewInvoicePage() {
                             </span>
                           </div>
                         </div>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => removeBauItem(item.id)}
-                          className="flex-shrink-0 text-destructive hover:text-destructive"
-                          disabled={bauItems.length === 1}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1 flex-shrink-0">
+                          <Button size="icon" variant="ghost" onClick={() => insertBauItem(idx)} title="Zeile darüber einfügen">
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => removeBauItem(item.id)}
+                            className="text-destructive hover:text-destructive"
+                            disabled={bauItems.length === 1}
+                            title="Zeile löschen"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>

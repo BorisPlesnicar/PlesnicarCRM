@@ -88,7 +88,10 @@ const navCategories: NavCategory[] = [
   {
     label: "Sonstiges",
     icon: StickyNote,
-    items: [{ href: "/app/notes", label: "Notizen", icon: StickyNote }],
+    items: [
+      { href: "/app/notes", label: "Notizen", icon: StickyNote },
+      { href: "/app/vorlagen", label: "Vorlagen", icon: FileText },
+    ],
   },
   {
     label: "Hilfe",

@@ -16,7 +16,7 @@ import { formatCurrency } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
 import { Download, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { de } from "date-fns/locale";
 
 const RED = "#DC2626";
@@ -74,7 +74,7 @@ function formatNumberDE(value: number, decimals: number = 2): string {
 const s = StyleSheet.create({
   page: {
     paddingTop: 32,
-    paddingBottom: 82,
+    paddingBottom: 120,
     paddingHorizontal: 50,
     fontSize: 10,
     fontFamily: "Helvetica",
@@ -161,6 +161,48 @@ const s = StyleSheet.create({
     color: "#1a1a1a",
     textAlign: "right",
   },
+  // Zahlungsvereinbarung (Skonto)
+  paymentSection: {
+    marginTop: 12,
+    marginBottom: 14,
+  },
+  paymentSectionTitle: {
+    fontSize: 9,
+    fontWeight: 700,
+    color: "#1a1a1a",
+    marginBottom: 6,
+  },
+  paymentTable: {
+    borderWidth: 1,
+    borderColor: "#e5e5e5",
+    backgroundColor: "#fafafa",
+  },
+  paymentTableHeader: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderColor: "#e0e0e0",
+    backgroundColor: "#f0f0f0",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  paymentTableRow: {
+    flexDirection: "row",
+    borderBottomWidth: 0.5,
+    borderColor: "#e8e8e8",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  paymentTableRowLast: {
+    flexDirection: "row",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  paymentColZahlbetrag: { width: "18%", fontSize: 9 },
+  paymentColBasisdatum: { width: "22%", fontSize: 9 },
+  paymentColBedingung: { width: "32%", fontSize: 9 },
+  paymentColFaellig: { width: "18%", fontSize: 9 },
+  paymentColEur: { width: "10%", fontSize: 9, textAlign: "right" as const },
+  paymentHeaderText: { fontSize: 8.5, fontWeight: 700, color: "#444" },
   // Recipient
   recipient: {
     marginBottom: 14,
@@ -351,6 +393,16 @@ export function InvoicePDFDocument({
 }: Omit<InvoicePDFProps, "onClose" | "previewMode">) {
   const invoiceDate = invoice.invoice_date ? new Date(invoice.invoice_date) : new Date();
   const dueDate = invoice.due_date ? new Date(invoice.due_date) : new Date();
+  const hasSkonto =
+    invoice.skonto_days != null &&
+    invoice.skonto_percent != null &&
+    invoice.skonto_days > 0 &&
+    invoice.skonto_percent > 0;
+  const dueDateSkonto = hasSkonto ? addDays(invoiceDate, invoice.skonto_days!) : dueDate;
+  const dueDateFull = addDays(invoiceDate, invoice.payment_term_days || 14);
+  const totalWithSkonto = hasSkonto
+    ? Math.round(invoice.total_amount * (1 - invoice.skonto_percent! / 100) * 100) / 100
+    : invoice.total_amount;
 
   return (
     <Document>
@@ -383,17 +435,9 @@ export function InvoicePDFDocument({
               <Text style={s.infoLabel}>Rechnungsnummer:</Text>
               <Text style={s.infoValue}>{invoice.invoice_number || "DRAFT"}</Text>
             </View>
-            <View style={s.invoiceInfoRow}>
+            <View style={s.invoiceInfoRowLast}>
               <Text style={s.infoLabel}>Kundennummer:</Text>
               <Text style={s.infoValue}>{invoice.customer_number || "–"}</Text>
-            </View>
-            <View style={s.invoiceInfoRow}>
-              <Text style={s.infoLabel}>Zahlungsziel:</Text>
-              <Text style={s.infoValue}>{invoice.payment_term_days || 14} Tage</Text>
-            </View>
-            <View style={s.invoiceInfoRowLast}>
-              <Text style={s.infoLabel}>Fälligkeitsdatum:</Text>
-              <Text style={s.infoValueBold}>{format(dueDate, "dd.MM.yyyy", { locale: de })}</Text>
             </View>
           </View>
         </View>
@@ -464,6 +508,51 @@ export function InvoicePDFDocument({
             </View>
           </View>
         </View>
+
+        {/* Zahlungsziel / Zahlungsvereinbarung unter der Summe */}
+        {hasSkonto ? (
+          <View style={s.paymentSection}>
+            <Text style={s.paymentSectionTitle}>Zahlungsvereinbarung</Text>
+            <View style={s.paymentTable}>
+              <View style={s.paymentTableHeader}>
+                <Text style={[s.paymentColZahlbetrag, s.paymentHeaderText]}>Zahlbetrag</Text>
+                <Text style={[s.paymentColBasisdatum, s.paymentHeaderText]}>Basisdatum</Text>
+                <Text style={[s.paymentColBedingung, s.paymentHeaderText]}>Zahlungsbedingung</Text>
+                <Text style={[s.paymentColFaellig, s.paymentHeaderText]}>Fällig am</Text>
+                <Text style={[s.paymentColEur, s.paymentHeaderText]}>EUR</Text>
+              </View>
+              <View style={s.paymentTableRow}>
+                <Text style={s.paymentColZahlbetrag} />
+                <Text style={s.paymentColBasisdatum}>{format(invoiceDate, "dd.MM.yyyy", { locale: de })}</Text>
+                <Text style={s.paymentColBedingung}>
+                  {invoice.skonto_days} Tage {formatNumberDE(invoice.skonto_percent!, 2)} % Skonto
+                </Text>
+                <Text style={s.paymentColFaellig}>{format(dueDateSkonto, "dd.MM.yyyy", { locale: de })}</Text>
+                <Text style={s.paymentColEur}>{formatNumberDE(totalWithSkonto, 2)}</Text>
+              </View>
+              <View style={s.paymentTableRowLast}>
+                <Text style={s.paymentColZahlbetrag}>oder</Text>
+                <Text style={s.paymentColBasisdatum}>{format(invoiceDate, "dd.MM.yyyy", { locale: de })}</Text>
+                <Text style={s.paymentColBedingung}>
+                  {invoice.payment_term_days || 14} Tage ohne Abzug
+                </Text>
+                <Text style={s.paymentColFaellig}>{format(dueDateFull, "dd.MM.yyyy", { locale: de })}</Text>
+                <Text style={s.paymentColEur}>{formatNumberDE(invoice.total_amount || 0, 2)}</Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={s.paymentSection}>
+            <View style={s.paymentTable}>
+              <View style={s.paymentTableRowLast}>
+                <Text style={[s.paymentColZahlbetrag, s.paymentHeaderText]}>Zahlungsziel:</Text>
+                <Text style={s.paymentColBedingung}>{invoice.payment_term_days || 14} Tage</Text>
+                <Text style={[s.paymentColFaellig, s.paymentHeaderText]}>Fällig am:</Text>
+                <Text style={s.paymentColEur}>{format(dueDate, "dd.MM.yyyy", { locale: de })}</Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Hinweise unverändert im Fluss */}
         <View style={s.legalSection}>
