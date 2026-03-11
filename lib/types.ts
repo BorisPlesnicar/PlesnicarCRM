@@ -156,6 +156,7 @@ export interface Invoice {
   payment_term_days: number;
   skonto_days: number | null;
   skonto_percent: number | null;
+  show_discount_column?: boolean;
   customer_number: string | null;
   invoice_type?: "it" | "bau";
   net_amount: number;

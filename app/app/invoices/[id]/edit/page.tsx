@@ -50,6 +50,7 @@ export default function EditInvoicePage() {
   const [paymentTermDays, setPaymentTermDays] = useState(14);
   const [skontoDays, setSkontoDays] = useState<number | null>(null);
   const [skontoPercent, setSkontoPercent] = useState<number | null>(null);
+  const [showDiscountColumn, setShowDiscountColumn] = useState(true);
   const [customerNumber, setCustomerNumber] = useState("");
   const [vatPercent, setVatPercent] = useState(0);
   const [isPartialPayment, setIsPartialPayment] = useState(false);
@@ -95,6 +96,7 @@ export default function EditInvoicePage() {
       payment_term_days: paymentTermDays,
       skonto_days: skontoDays ?? null,
       skonto_percent: skontoPercent ?? null,
+      show_discount_column: showDiscountColumn,
       customer_number: customerNumber || null,
       invoice_type: invoiceType,
       intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
@@ -162,6 +164,7 @@ export default function EditInvoicePage() {
       setPaymentTermDays(inv.payment_term_days ?? 14);
       setSkontoDays(inv.skonto_days ?? null);
       setSkontoPercent(inv.skonto_percent ?? null);
+      setShowDiscountColumn(inv.show_discount_column !== false);
       setCustomerNumber(inv.customer_number || "");
       setVatPercent(inv.vat_percent ?? 0);
       setIsPartialPayment(inv.is_partial_payment ?? false);
@@ -338,6 +341,7 @@ export default function EditInvoicePage() {
         payment_term_days: paymentTermDays,
         skonto_days: skontoDays ?? null,
         skonto_percent: skontoPercent ?? null,
+        show_discount_column: showDiscountColumn,
         customer_number: customerNumber || null,
         invoice_type: invoiceType,
         intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
@@ -557,6 +561,16 @@ export default function EditInvoicePage() {
                 <div className="space-y-2">
                   <Label>Kundennummer (optional)</Label>
                   <Input value={customerNumber} onChange={(e) => setCustomerNumber(e.target.value)} />
+                </div>
+                <div className="flex items-center space-x-2 sm:col-span-2">
+                  <Switch
+                    id="show-discount"
+                    checked={showDiscountColumn}
+                    onCheckedChange={setShowDiscountColumn}
+                  />
+                  <Label htmlFor="show-discount" className="font-normal cursor-pointer">
+                    Rabattspalte in PDF anzeigen
+                  </Label>
                 </div>
               </div>
             </CardContent>

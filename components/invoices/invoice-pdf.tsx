@@ -274,6 +274,7 @@ const s = StyleSheet.create({
   colUst: { width: "8%", textAlign: "center" },
   colRabatt: { width: "10%", textAlign: "right" },
   colGesamt: { width: "19%", textAlign: "right", fontWeight: "bold" },
+  colGesamtNoRabatt: { width: "29%", textAlign: "right" as const, fontWeight: "bold" as const },
   // Totals
   totalsWrap: {
     position: "relative",
@@ -400,6 +401,7 @@ export function InvoicePDFDocument({
     invoice.skonto_percent > 0;
   const dueDateSkonto = hasSkonto ? addDays(invoiceDate, invoice.skonto_days!) : dueDate;
   const dueDateFull = addDays(invoiceDate, invoice.payment_term_days || 14);
+  const showRabatt = invoice.show_discount_column !== false;
   const totalWithSkonto = hasSkonto
     ? Math.round(invoice.total_amount * (1 - invoice.skonto_percent! / 100) * 100) / 100
     : invoice.total_amount;
@@ -468,8 +470,8 @@ export function InvoicePDFDocument({
             <Text style={[s.tableHeaderText, s.colEinheit]}>Einheit</Text>
             <Text style={[s.tableHeaderText, s.colEinheitspreis]}>Einheitspreis</Text>
             <Text style={[s.tableHeaderText, s.colUst]}>Ust.</Text>
-            <Text style={[s.tableHeaderText, s.colRabatt]}>Rabatt</Text>
-            <Text style={[s.tableHeaderText, s.colGesamt]}>Gesamt</Text>
+            {showRabatt && <Text style={[s.tableHeaderText, s.colRabatt]}>Rabatt</Text>}
+            <Text style={[s.tableHeaderText, showRabatt ? s.colGesamt : s.colGesamtNoRabatt]}>Gesamt</Text>
           </View>
           {/* Rows */}
           {items.map((item, index) => (
@@ -479,8 +481,8 @@ export function InvoicePDFDocument({
               <Text style={[s.tableCell, s.colEinheit]}>{item.unit}</Text>
               <Text style={[s.tableCell, s.colEinheitspreis]}>€ {formatNumberDE(item.unit_price, 2)}</Text>
               <Text style={[s.tableCell, s.colUst]}>{item.vat_percent.toFixed(0)}%</Text>
-              <Text style={[s.tableCell, s.colRabatt]}>{item.discount_percent > 0 ? `${formatNumberDE(item.discount_percent, 2)}%` : "0,00%"}</Text>
-              <Text style={[s.tableCell, s.colGesamt]}>{formatNumberDE(item.total, 2)} €</Text>
+              {showRabatt && <Text style={[s.tableCell, s.colRabatt]}>{item.discount_percent > 0 ? `${formatNumberDE(item.discount_percent, 2)}%` : "0,00%"}</Text>}
+              <Text style={[s.tableCell, showRabatt ? s.colGesamt : s.colGesamtNoRabatt]}>{formatNumberDE(item.total, 2)} €</Text>
             </View>
           ))}
         </View>
