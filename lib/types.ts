@@ -16,6 +16,10 @@ export interface Client {
   notes: string;
   status: "lead" | "customer" | "archived";
   customer_number: string | null;
+  /** it = ohne Guthaben-Logik, bau = Guthaben pflegbar & Anrechnung auf BAU-Rechnungen */
+  client_type?: "it" | "bau";
+  /** Verfügbares Guthaben EUR (nur Bau-Kunden) */
+  credit_balance?: number;
   created_at: string;
 }
 
@@ -140,6 +144,8 @@ export interface Transaction {
   category: string | null;
   date: string;
   notes: string | null;
+  /** false = Guthaben-/Verrechnungsbuchung ohne Bankbewegung (nicht im Bank-Saldo) */
+  affects_bank_balance?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -157,11 +163,17 @@ export interface Invoice {
   skonto_days: number | null;
   skonto_percent: number | null;
   show_discount_column?: boolean;
+  /** PDF: Zeile „Ihr restliches Guthaben beträgt …“ */
+  show_balance_line?: boolean;
+  /** Manueller Betrag für die Guthaben-Zeile (EUR) */
+  balance_line_amount?: number | null;
   customer_number: string | null;
   invoice_type?: "it" | "bau";
   net_amount: number;
   vat_amount: number;
   total_amount: number;
+  /** Von Kundenguthaben angerechnet (BAU + Bau-Kunde), reduziert zu zahlenden Betrag */
+  credit_applied_amount?: number;
   vat_percent: number;
   currency: string;
   is_partial_payment: boolean;
@@ -194,6 +206,8 @@ export interface InvoiceItem {
   vat_percent: number;
   discount_percent: number;
   total: number;
+  /** BAU: freier Abschnittstext zwischen Positionen (PDF wie Einleitung über der Tabelle) */
+  row_kind?: "position" | "text_block";
 }
 
 export type EmployeeRole = "owner" | "supporter" | "employee";

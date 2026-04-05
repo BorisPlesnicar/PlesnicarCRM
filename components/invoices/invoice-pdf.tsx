@@ -12,7 +12,7 @@ import {
 } from "@react-pdf/renderer";
 import QRCode from "qrcode";
 import { Invoice, InvoiceItem, Client } from "@/lib/types";
-import { formatCurrency } from "@/lib/calculations";
+import { amountDueAfterCredit } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
 import { Download, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -203,6 +203,26 @@ const s = StyleSheet.create({
   paymentColFaellig: { width: "18%", fontSize: 9 },
   paymentColEur: { width: "10%", fontSize: 9, textAlign: "right" as const },
   paymentHeaderText: { fontSize: 8.5, fontWeight: 700, color: "#444" },
+  // BAU: Abschnittstext zwischen Tabellenzeilen (wie Einleitung)
+  bauInlineTextBlock: {
+    width: "100%",
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    backgroundColor: "#fafafa",
+    borderLeftWidth: 3,
+    borderLeftColor: RED,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "#ececec",
+    borderBottomColor: "#ececec",
+  },
+  bauInlineTextBlockContent: {
+    fontSize: 9,
+    lineHeight: 1.5,
+    color: "#333",
+  },
   // Recipient
   recipient: {
     marginBottom: 14,
@@ -309,6 +329,31 @@ const s = StyleSheet.create({
     letterSpacing: 0.5,
   },
   // Legal Note
+  balanceLineSection: {
+    marginTop: 12,
+    marginBottom: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    borderLeftWidth: 4,
+    borderLeftColor: RED,
+    borderRadius: 4,
+    width: 280,
+  },
+  balanceLineText: {
+    fontSize: 11.5,
+    fontWeight: 700,
+    color: "#1a1a1a",
+    lineHeight: 1.45,
+  },
+  balanceLineAmount: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: RED,
+    marginTop: 4,
+  },
   legalNote: {
     fontSize: 7.5,
     color: "#666",
@@ -402,9 +447,13 @@ export function InvoicePDFDocument({
   const dueDateSkonto = hasSkonto ? addDays(invoiceDate, invoice.skonto_days!) : dueDate;
   const dueDateFull = addDays(invoiceDate, invoice.payment_term_days || 14);
   const showRabatt = invoice.show_discount_column !== false;
+  const totalAmount = invoice.total_amount ?? 0;
+  const creditApplied = Math.max(0, Number(invoice.credit_applied_amount ?? 0));
+  const dueAfterCredit = amountDueAfterCredit(totalAmount, creditApplied);
   const totalWithSkonto = hasSkonto
-    ? Math.round(invoice.total_amount * (1 - invoice.skonto_percent! / 100) * 100) / 100
-    : invoice.total_amount;
+    ? Math.round(totalAmount * (1 - invoice.skonto_percent! / 100) * 100) / 100
+    : totalAmount;
+  const totalWithSkontoAfterCredit = amountDueAfterCredit(totalWithSkonto, creditApplied);
 
   return (
     <Document>
@@ -473,18 +522,52 @@ export function InvoicePDFDocument({
             {showRabatt && <Text style={[s.tableHeaderText, s.colRabatt]}>Rabatt</Text>}
             <Text style={[s.tableHeaderText, showRabatt ? s.colGesamt : s.colGesamtNoRabatt]}>Gesamt</Text>
           </View>
-          {/* Rows */}
-          {items.map((item, index) => (
-            <View key={item.id || item.position} style={index % 2 === 0 ? s.tableRow : s.tableRowAlt}>
-              <Text style={[s.tableCell, s.colBezeichnung]}>{item.description}</Text>
-              <Text style={[s.tableCell, s.colAnzahl]}>{formatNumberDE(item.quantity, 2)}</Text>
-              <Text style={[s.tableCell, s.colEinheit]}>{item.unit}</Text>
-              <Text style={[s.tableCell, s.colEinheitspreis]}>€ {formatNumberDE(item.unit_price, 2)}</Text>
-              <Text style={[s.tableCell, s.colUst]}>{item.vat_percent.toFixed(0)}%</Text>
-              {showRabatt && <Text style={[s.tableCell, s.colRabatt]}>{item.discount_percent > 0 ? `${formatNumberDE(item.discount_percent, 2)}%` : "0,00%"}</Text>}
-              <Text style={[s.tableCell, showRabatt ? s.colGesamt : s.colGesamtNoRabatt]}>{formatNumberDE(item.total, 2)} €</Text>
-            </View>
-          ))}
+          {/* Rows (BAU: optional Abschnittstext-Zeilen wie Einleitung) */}
+          {items.map((item, index) => {
+            const isTextBlock =
+              invoice.invoice_type === "bau" && item.row_kind === "text_block";
+            if (isTextBlock) {
+              const lines = item.description.split(/\r?\n/);
+              return (
+                <View
+                  key={item.id || `tb-${item.position}`}
+                  style={s.bauInlineTextBlock}
+                  wrap={false}
+                >
+                  {lines.map((line, li) => (
+                    <Text
+                      key={li}
+                      style={[s.bauInlineTextBlockContent, li < lines.length - 1 ? { marginBottom: 3 } : {}]}
+                    >
+                      {line.length ? line : " "}
+                    </Text>
+                  ))}
+                </View>
+              );
+            }
+            return (
+              <View
+                key={item.id || `pos-${item.position}`}
+                style={index % 2 === 0 ? s.tableRow : s.tableRowAlt}
+              >
+                <Text style={[s.tableCell, s.colBezeichnung]}>{item.description}</Text>
+                <Text style={[s.tableCell, s.colAnzahl]}>{formatNumberDE(item.quantity, 2)}</Text>
+                <Text style={[s.tableCell, s.colEinheit]}>{item.unit}</Text>
+                <Text style={[s.tableCell, s.colEinheitspreis]}>€ {formatNumberDE(item.unit_price, 2)}</Text>
+                <Text style={[s.tableCell, s.colUst]}>{item.vat_percent.toFixed(0)}%</Text>
+                {showRabatt && (
+                  <Text style={[s.tableCell, s.colRabatt]}>
+                    {item.discount_percent > 0
+                      ? `${formatNumberDE(item.discount_percent, 2)}%`
+                      : "0,00%"}
+                  </Text>
+                )}
+                <Text style={[s.tableCell, showRabatt ? s.colGesamt : s.colGesamtNoRabatt]}>
+                  {formatNumberDE(item.total, 2)} €
+                </Text>
+              </View>
+            );
+          })}
         </View>
 
         {/* Totals + QR auf Höhe Nettobetrag (links) */}
@@ -508,8 +591,27 @@ export function InvoicePDFDocument({
               <Text style={[s.totalLabel, { fontSize: 10.5, fontWeight: 700 }]}>Rechnungsbetrag:</Text>
               <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(invoice.total_amount || 0, 2)} €</Text>
             </View>
+            {creditApplied > 0 && (
+              <View style={[s.totalRow, { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#e5e5e5" }]}>
+                <Text style={[s.totalLabel, { fontSize: 10.5, fontWeight: 700 }]}>Zu zahlen:</Text>
+                <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(dueAfterCredit, 2)} €</Text>
+              </View>
+            )}
           </View>
         </View>
+
+        {invoice.show_balance_line === true &&
+          invoice.balance_line_amount != null &&
+          !Number.isNaN(Number(invoice.balance_line_amount)) && (
+            <View style={{ width: "100%", alignItems: "flex-end" }}>
+              <View style={s.balanceLineSection}>
+                <Text style={s.balanceLineText}>Ihr restliches Guthaben beträgt:</Text>
+                <Text style={s.balanceLineAmount}>
+                  {formatNumberDE(Number(invoice.balance_line_amount), 2)} €
+                </Text>
+              </View>
+            </View>
+          )}
 
         {/* Zahlungsziel / Zahlungsvereinbarung unter der Summe */}
         {hasSkonto ? (
@@ -530,7 +632,7 @@ export function InvoicePDFDocument({
                   {invoice.skonto_days} Tage {formatNumberDE(invoice.skonto_percent!, 2)} % Skonto
                 </Text>
                 <Text style={s.paymentColFaellig}>{format(dueDateSkonto, "dd.MM.yyyy", { locale: de })}</Text>
-                <Text style={s.paymentColEur}>{formatNumberDE(totalWithSkonto, 2)}</Text>
+                <Text style={s.paymentColEur}>{formatNumberDE(totalWithSkontoAfterCredit, 2)}</Text>
               </View>
               <View style={s.paymentTableRowLast}>
                 <Text style={s.paymentColZahlbetrag}>oder</Text>
@@ -539,7 +641,7 @@ export function InvoicePDFDocument({
                   {invoice.payment_term_days || 14} Tage ohne Abzug
                 </Text>
                 <Text style={s.paymentColFaellig}>{format(dueDateFull, "dd.MM.yyyy", { locale: de })}</Text>
-                <Text style={s.paymentColEur}>{formatNumberDE(invoice.total_amount || 0, 2)}</Text>
+                <Text style={s.paymentColEur}>{formatNumberDE(dueAfterCredit, 2)}</Text>
               </View>
             </View>
           </View>
@@ -608,8 +710,10 @@ export default function InvoicePDF({ invoice, items, client, onClose, previewMod
   async function handleDownload() {
     setGenerating(true);
     try {
+      const credit = Math.max(0, Number(invoice.credit_applied_amount ?? 0));
+      const qrAmount = amountDueAfterCredit(invoice.total_amount ?? 0, credit);
       const qrDataUrl = await getInvoiceQRDataUrl(
-        invoice.total_amount ?? 0,
+        qrAmount,
         invoice.invoice_number ?? ""
       );
       const doc = (

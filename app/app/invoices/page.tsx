@@ -76,13 +76,34 @@ export default function InvoicesPage() {
   async function handleDelete(id: string) {
     if (!canWrite) return;
     if (!confirm("Rechnung wirklich löschen?")) return;
+    const { data: inv } = await supabase
+      .from("invoices")
+      .select("client_id, credit_applied_amount, invoice_number")
+      .eq("id", id)
+      .single();
+    const applied = Number(inv?.credit_applied_amount ?? 0);
+    const num = inv?.invoice_number?.trim();
+    if (num) {
+      await supabase.from("transactions").delete().eq("description", `Rechnung ${num}`).eq("type", "income");
+    }
     const { error } = await supabase.from("invoices").delete().eq("id", id);
     if (error) {
       toast.error("Fehler", { description: error.message });
-    } else {
-      toast.success("Rechnung gelöscht");
-      loadInvoices();
+      return;
     }
+    if (applied > 0 && inv?.client_id) {
+      const { data: c } = await supabase
+        .from("clients")
+        .select("credit_balance")
+        .eq("id", inv.client_id)
+        .single();
+      await supabase
+        .from("clients")
+        .update({ credit_balance: Number(c?.credit_balance ?? 0) + applied })
+        .eq("id", inv.client_id);
+    }
+    toast.success("Rechnung gelöscht");
+    loadInvoices();
   }
 
   const filtered = invoices.filter((i) => {

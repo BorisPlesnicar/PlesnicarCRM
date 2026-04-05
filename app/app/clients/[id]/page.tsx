@@ -177,15 +177,49 @@ export default function ClientDetailPage() {
                 <p className="text-muted-foreground">{client.company}</p>
               )}
             </div>
-            <Badge
-              variant="outline"
-              className={statusColors[client.status]}
-            >
-              {statusLabels[client.status]}
-            </Badge>
+            <div className="flex flex-col items-end gap-2">
+              {client.client_type === "bau" && (
+                <Badge
+                  variant="outline"
+                  className="bg-orange-500/10 text-orange-400 border-orange-500/20"
+                >
+                  Bau-Kunde
+                </Badge>
+              )}
+              <Badge
+                variant="outline"
+                className={statusColors[client.status]}
+              >
+                {statusLabels[client.status]}
+              </Badge>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {client.client_type === "bau" && (
+            <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 flex items-center gap-3">
+              <DollarSign className="h-5 w-5 text-emerald-500 shrink-0" />
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Verfügbares Guthaben
+                </p>
+                <p className="text-xl font-semibold text-foreground">
+                  {formatCurrency(client.credit_balance ?? 0)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Wird bei BAU-Rechnungen automatisch bis zur Rechnungssumme abgezogen. Bearbeiten unter{" "}
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-2 hover:underline"
+                    onClick={() => router.push("/app/clients")}
+                  >
+                    Kunden
+                  </button>{" "}
+                  (Stift-Symbol).
+                </p>
+              </div>
+            </div>
+          )}
           {client.email && (
             <div className="flex items-center gap-2 text-sm">
               <Mail className="h-4 w-4 text-muted-foreground" />

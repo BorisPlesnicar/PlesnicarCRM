@@ -147,15 +147,14 @@ export default function DashboardPage() {
 
         const { data: incomes } = await supabase
           .from("transactions")
-          .select("amount, type, date")
+          .select("amount, type, date, affects_bank_balance")
           .eq("type", "income")
           .gte("date", format(monthStart, "yyyy-MM-dd"))
           .lte("date", format(monthEnd, "yyyy-MM-dd"));
 
-        const revenue = (incomes || []).reduce(
-          (sum, t) => sum + (t.amount || 0),
-          0
-        );
+        const revenue = (incomes || [])
+          .filter((t) => (t as { affects_bank_balance?: boolean }).affects_bank_balance !== false)
+          .reduce((sum, t) => sum + (t.amount || 0), 0);
         revenueData.push({ month: monthKey, revenue });
       }
 
@@ -186,10 +185,10 @@ export default function DashboardPage() {
           .from("offers")
           .select("id", { count: "exact", head: true })
           .eq("status", "sent"),
-        // Monthly income from transactions (real cash in)
+        // Monthly income from transactions (nur Bankabgleich)
         supabase
           .from("transactions")
-          .select("amount, type, date")
+          .select("amount, type, date, affects_bank_balance")
           .eq("type", "income")
           .gte("date", format(startOfMonthDate, "yyyy-MM-dd"))
           .lte("date", format(endOfMonthDate, "yyyy-MM-dd")),
@@ -230,11 +229,10 @@ export default function DashboardPage() {
           .in("status", ["sent", "overdue"]),
       ]);
 
-      // Revenue = sum of incomes (transactions) this month
-      const revenueMonth = (incomes.data || []).reduce(
-        (sum, t) => sum + (t.amount || 0),
-        0
-      );
+      // Revenue = Einnahmen mit Bankabgleich (ohne reine Guthaben-Buchungen)
+      const revenueMonth = (incomes.data || [])
+        .filter((t) => (t as { affects_bank_balance?: boolean }).affects_bank_balance !== false)
+        .reduce((sum, t) => sum + (t.amount || 0), 0);
       const hoursMonth =
         (timeEntries.data || []).reduce(
           (sum, t) => sum + (t.duration_minutes || 0),

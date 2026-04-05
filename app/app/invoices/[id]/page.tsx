@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Invoice, InvoiceItem, Client, INVOICE_STATUSES } from "@/lib/types";
-import { formatCurrency } from "@/lib/calculations";
+import { formatCurrency, amountDueAfterCredit } from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -140,79 +140,93 @@ export default function InvoiceDetailPage() {
   async function updateStatus(newStatus: string) {
     if (!canWrite || !invoice) return;
     setUpdatingStatus(true);
-    
+
+    const paidDesc = `Rechnung ${invoice.invoice_number}`;
+
     try {
-      // Update invoice status
       const { error: invoiceError } = await supabase
         .from("invoices")
         .update({ status: newStatus })
         .eq("id", invoice.id);
-      
+
       if (invoiceError) {
         toast.error("Fehler", { description: invoiceError.message });
         setUpdatingStatus(false);
         return;
       }
 
-      // If status is "paid", create income transaction
+      if (invoice.status === "paid" && newStatus !== "paid") {
+        const { error: deleteError } = await supabase
+          .from("transactions")
+          .delete()
+          .eq("description", paidDesc)
+          .eq("type", "income");
+        if (deleteError) {
+          console.error("Error deleting transaction:", deleteError);
+        }
+      }
+
       if (newStatus === "paid") {
-        // Check if transaction already exists for this invoice
         const { data: existingTransactions, error: checkError } = await supabase
           .from("transactions")
           .select("id")
-          .eq("description", `Rechnung ${invoice.invoice_number}`)
+          .eq("description", paidDesc)
           .eq("type", "income");
 
         if (checkError) {
           console.error("Error checking existing transactions:", checkError);
         }
 
-        // Only create transaction if it doesn't exist yet
         if (!existingTransactions || existingTransactions.length === 0) {
-          const transactionData = {
-            type: "income" as const,
-            amount: invoice.total_amount,
-            description: `Rechnung ${invoice.invoice_number}`,
-            category: "Rechnung",
-            date: new Date().toISOString().split("T")[0],
-            notes: `Automatisch erstellt bei Bezahlung der Rechnung ${invoice.invoice_number}`,
-          };
+          const total = Number(invoice.total_amount ?? 0);
+          const creditApplied = Math.max(0, Number(invoice.credit_applied_amount ?? 0));
+          const cashReceived = amountDueAfterCredit(total, creditApplied);
 
-          console.log("Creating transaction:", transactionData);
+          if (cashReceived > 0) {
+            const noteBase = `Automatisch erstellt bei Bezahlung der Rechnung ${invoice.invoice_number}.`;
+            const noteCredit =
+              creditApplied > 0
+                ? ` Rechnungsbetrag ${formatCurrency(total)}, davon ${formatCurrency(creditApplied)} per Kundenguthaben angerechnet — als Einnahme gebucht: ${formatCurrency(cashReceived)} (Zahlbetrag). Keine separate Ausgabe für das Guthaben buchen.`
+                : "";
 
-          const { data: newTransaction, error: transactionError } = await supabase
-            .from("transactions")
-            .insert(transactionData)
-            .select()
-            .single();
+            const { error: transactionError } = await supabase
+              .from("transactions")
+              .insert({
+                type: "income" as const,
+                amount: cashReceived,
+                description: paidDesc,
+                category: "Rechnung",
+                date: new Date().toISOString().split("T")[0],
+                notes: noteBase + noteCredit,
+                affects_bank_balance: true,
+              })
+              .select()
+              .single();
 
-          if (transactionError) {
-            console.error("Transaction creation error:", transactionError);
-            toast.error("Rechnung als bezahlt markiert, aber Transaktion konnte nicht erstellt werden", {
-              description: transactionError.message,
-            });
+            if (transactionError) {
+              console.error("Transaction creation error:", transactionError);
+              toast.error("Rechnung als bezahlt markiert, aber Transaktion konnte nicht erstellt werden", {
+                description: transactionError.message,
+              });
+            } else {
+              toast.success(
+                creditApplied > 0
+                  ? "Bezahlt markiert — Einnahme entspricht dem Zahlbetrag (nach Guthaben)"
+                  : "Rechnung als bezahlt markiert und Einnahme erstellt"
+              );
+            }
+          } else if (creditApplied > 0) {
+            toast.success(
+              "Rechnung als bezahlt markiert. Vollständig per Kundenguthaben beglichen — keine Einnahme-Transaktion (kein Geldeingang)."
+            );
           } else {
-            console.log("Transaction created successfully:", newTransaction);
-            toast.success("Rechnung als bezahlt markiert und Einnahme erstellt");
+            toast.success("Rechnung als bezahlt markiert");
           }
         } else {
-          console.log("Transaction already exists for this invoice");
           toast.success("Status aktualisiert (Transaktion existiert bereits)");
         }
       } else if (invoice.status === "paid" && newStatus !== "paid") {
-        // If status changes from "paid" to something else, remove the transaction
-        const { error: deleteError } = await supabase
-          .from("transactions")
-          .delete()
-          .eq("description", `Rechnung ${invoice.invoice_number}`)
-          .eq("type", "income");
-
-        if (deleteError) {
-          console.error("Error deleting transaction:", deleteError);
-          toast.warning("Status aktualisiert, aber zugehörige Transaktion konnte nicht entfernt werden");
-        } else {
-          toast.success("Status aktualisiert und zugehörige Einnahme entfernt");
-        }
+        toast.success("Status aktualisiert — zugehörige Bank-Einnahme entfernt");
       } else {
         toast.success("Status aktualisiert");
       }
@@ -394,6 +408,16 @@ export default function InvoiceDetailPage() {
             <p className="text-2xl font-bold text-primary">
               {formatCurrency(invoice.total_amount)}
             </p>
+            {Number(invoice.credit_applied_amount ?? 0) > 0 && (
+              <div className="mt-2 space-y-1 text-sm">
+                <p className="text-emerald-600/90 dark:text-emerald-400/90">
+                  Guthaben angerechnet: −{formatCurrency(Number(invoice.credit_applied_amount))}
+                </p>
+                <p className="font-semibold text-foreground">
+                  Zu zahlen: {formatCurrency(amountDueAfterCredit(invoice.total_amount, Number(invoice.credit_applied_amount)))}
+                </p>
+              </div>
+            )}
             {invoice.is_partial_payment && (
               <p className="text-xs text-muted-foreground mt-1">
                 Teilanzahlung von {formatCurrency(invoice.partial_payment_of_total || 0)}
@@ -423,22 +447,31 @@ export default function InvoiceDetailPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((item) => (
-                <TableRow key={item.id} className="border-border">
-                  <TableCell className="text-muted-foreground">{item.position}</TableCell>
-                  <TableCell className="font-medium">{item.description}</TableCell>
-                  <TableCell className="text-right">{item.quantity.toFixed(2)}</TableCell>
-                  <TableCell className="text-center">{item.unit}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
-                  <TableCell className="text-center">{item.vat_percent}%</TableCell>
-                  <TableCell className="text-right">
-                    {item.discount_percent > 0 ? `${item.discount_percent}%` : "–"}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(item.total)}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {items.map((item) =>
+                invoice.invoice_type === "bau" && item.row_kind === "text_block" ? (
+                  <TableRow key={item.id} className="border-border bg-orange-500/5">
+                    <TableCell colSpan={8} className="py-3">
+                      <p className="text-xs font-medium text-orange-400/90 mb-1">Abschnittstext</p>
+                      <p className="text-sm whitespace-pre-wrap text-foreground">{item.description}</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <TableRow key={item.id} className="border-border">
+                    <TableCell className="text-muted-foreground">{item.position}</TableCell>
+                    <TableCell className="font-medium">{item.description}</TableCell>
+                    <TableCell className="text-right">{item.quantity.toFixed(2)}</TableCell>
+                    <TableCell className="text-center">{item.unit}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
+                    <TableCell className="text-center">{item.vat_percent}%</TableCell>
+                    <TableCell className="text-right">
+                      {item.discount_percent > 0 ? `${item.discount_percent}%` : "–"}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(item.total)}
+                    </TableCell>
+                  </TableRow>
+                )
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -468,6 +501,26 @@ export default function InvoiceDetailPage() {
               <span>Rechnungsbetrag</span>
               <span className="text-primary">{formatCurrency(invoice.total_amount)}</span>
             </div>
+            {Number(invoice.credit_applied_amount ?? 0) > 0 && (
+              <div className="flex justify-between text-base font-bold pt-1 border-t border-border">
+                <span>Zu zahlen</span>
+                <span className="text-primary">
+                  {formatCurrency(
+                    amountDueAfterCredit(invoice.total_amount, Number(invoice.credit_applied_amount))
+                  )}
+                </span>
+              </div>
+            )}
+            {invoice.show_balance_line === true &&
+              invoice.balance_line_amount != null &&
+              Number.isFinite(Number(invoice.balance_line_amount)) && (
+                <div className="mt-4 rounded-2xl border border-red-500/25 border-l-4 border-l-primary bg-primary/5 px-4 py-3 backdrop-blur-sm">
+                  <p className="text-sm font-semibold text-foreground">Ihr restliches Guthaben beträgt:</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums tracking-tight text-primary">
+                    {formatCurrency(Number(invoice.balance_line_amount))}
+                  </p>
+                </div>
+              )}
           </div>
         </CardContent>
       </Card>
@@ -611,6 +664,10 @@ export default function InvoiceDetailPage() {
                       vat_percent: invoice.vat_percent,
                       is_partial_payment: false,
                       partial_payment_of_total: null,
+                      show_discount_column: invoice.show_discount_column !== false,
+                      show_balance_line: invoice.show_balance_line === true,
+                      balance_line_amount: invoice.balance_line_amount ?? null,
+                      credit_applied_amount: 0,
                       status: "draft",
                       notes: `Mahnung für Rechnung ${invoice.invoice_number}`,
                     })
@@ -629,6 +686,7 @@ export default function InvoiceDetailPage() {
                         items.map((item) => ({
                           invoice_id: reminderInvoice.id,
                           position: item.position,
+                          row_kind: item.row_kind ?? "position",
                           description: item.description,
                           quantity: item.quantity,
                           unit: item.unit,

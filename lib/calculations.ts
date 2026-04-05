@@ -105,3 +105,54 @@ export function formatNumber(value: number, decimals = 2): string {
     maximumFractionDigits: decimals,
   }).format(value);
 }
+
+/** Parses form input like "1.234,56" or "1234.5" into a number. */
+export function parseGermanAmount(input: string): number | null {
+  const s = input.trim().replace(/\s/g, "");
+  if (!s) return null;
+  if (s.includes(",") && s.includes(".")) {
+    const normalized = s.replace(/\./g, "").replace(",", ".");
+    const n = parseFloat(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+  const normalized = s.replace(",", ".");
+  const n = parseFloat(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Guthaben-Anrechnung nur bei BAU-Rechnung und Bau-Kunde. */
+export function computeBauCreditApplied(
+  invoiceType: "it" | "bau",
+  clientType: "it" | "bau" | undefined,
+  clientCreditBalance: number,
+  invoiceTotal: number,
+  previousAppliedOnThisInvoice = 0
+): number {
+  if (invoiceType !== "bau" || clientType !== "bau") return 0;
+  const avail = Math.max(0, Number(clientCreditBalance) + Number(previousAppliedOnThisInvoice));
+  const total = Math.max(0, Number(invoiceTotal));
+  return Math.min(avail, total);
+}
+
+export function amountDueAfterCredit(
+  totalAmount: number,
+  creditApplied: number
+): number {
+  return Math.max(0, Math.round((Number(totalAmount) - Number(creditApplied)) * 100) / 100);
+}
+
+/**
+ * Restliches Kundenguthaben nach Abzug der auf dieser Rechnung angewandten Guthaben-Anrechnung
+ * (für PDF-Zeile „Ihr restliches Guthaben beträgt …“ bei BAU + Bau-Kunde).
+ * Bei Bearbeitung: DB-Guthaben enthält bereits den Abzug der gespeicherten Rechnung → vorherigen Abzug addieren.
+ */
+export function balanceLineAmountAfterBauCredit(params: {
+  clientCreditBalance: number;
+  creditAppliedOnInvoice: number;
+  creditPreviouslyAppliedOnSameInvoice: number;
+}): number {
+  const c = Number(params.clientCreditBalance);
+  const applied = Number(params.creditAppliedOnInvoice);
+  const prev = Number(params.creditPreviouslyAppliedOnSameInvoice);
+  return Math.max(0, Math.round((c + prev - applied) * 100) / 100);
+}

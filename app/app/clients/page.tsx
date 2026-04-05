@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/app/app/AuthProvider";
 import { Client, CLIENT_STATUSES } from "@/lib/types";
+import { parseGermanAmount, formatCurrency } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,7 +57,7 @@ const statusLabels: Record<string, string> = {
   archived: "Archiviert",
 };
 
-const emptyClient: {
+type ClientFormState = {
   name: string;
   company: string;
   email: string;
@@ -64,7 +65,11 @@ const emptyClient: {
   address: string;
   notes: string;
   status: "lead" | "customer" | "archived";
-} = {
+  client_type: "it" | "bau";
+  credit_balance_input: string;
+};
+
+const emptyClient: ClientFormState = {
   name: "",
   company: "",
   email: "",
@@ -72,6 +77,8 @@ const emptyClient: {
   address: "",
   notes: "",
   status: "lead",
+  client_type: "it",
+  credit_balance_input: "",
 };
 
 function ClientsPage() {
@@ -127,6 +134,14 @@ function ClientsPage() {
       address: client.address,
       notes: client.notes,
       status: client.status,
+      client_type: client.client_type === "bau" ? "bau" : "it",
+      credit_balance_input:
+        client.client_type === "bau" && client.credit_balance != null && Number.isFinite(client.credit_balance)
+          ? new Intl.NumberFormat("de-DE", {
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 2,
+            }).format(client.credit_balance)
+          : "",
     });
     setDialogOpen(true);
   }
@@ -138,10 +153,23 @@ function ClientsPage() {
       return;
     }
     setSaving(true);
+    const creditParsed = parseGermanAmount(form.credit_balance_input);
+    const payload = {
+      name: form.name.trim(),
+      company: form.company,
+      email: form.email,
+      phone: form.phone,
+      address: form.address,
+      notes: form.notes,
+      status: form.status,
+      client_type: form.client_type,
+      credit_balance:
+        form.client_type === "bau" ? Math.max(0, creditParsed ?? 0) : 0,
+    };
     if (editClient?.id) {
       const { error } = await supabase
         .from("clients")
-        .update(form)
+        .update(payload)
         .eq("id", editClient.id);
       if (error) {
         toast.error("Fehler beim Aktualisieren", { description: error.message });
@@ -151,7 +179,7 @@ function ClientsPage() {
         loadClients();
       }
     } else {
-      const { error } = await supabase.from("clients").insert(form);
+      const { error } = await supabase.from("clients").insert(payload);
       if (error) {
         toast.error("Fehler beim Erstellen", { description: error.message });
       } else {
@@ -246,20 +274,21 @@ function ClientsPage() {
                 <TableHead className="hidden md:table-cell">E-Mail</TableHead>
                 <TableHead className="hidden md:table-cell">Telefon</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="hidden lg:table-cell">Typ</TableHead>
                 <TableHead className="text-right">Aktionen</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
+                  <TableCell colSpan={8} className="text-center py-8">
                     <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={8}
                     className="text-center py-8 text-muted-foreground"
                   >
                     Keine Kunden gefunden
@@ -292,6 +321,23 @@ function ClientsPage() {
                       >
                         {statusLabels[client.status]}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      {client.client_type === "bau" ? (
+                        <div className="flex flex-col gap-0.5">
+                          <Badge
+                            variant="outline"
+                            className="w-fit bg-orange-500/10 text-orange-400 border-orange-500/20"
+                          >
+                            Bau
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {formatCurrency(client.credit_balance ?? 0)} Guth.
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">IT</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -380,6 +426,11 @@ function ClientsPage() {
                     )}
                     {client.phone && (
                       <p className="text-xs text-muted-foreground truncate">{client.phone}</p>
+                    )}
+                    {client.client_type === "bau" && (
+                      <p className="text-xs text-orange-400/90 mt-1">
+                        Bau · Guthaben {formatCurrency(client.credit_balance ?? 0)}
+                      </p>
                     )}
                   </div>
                   <div className="flex gap-1 ml-2" onClick={(e) => e.stopPropagation()}>
@@ -504,6 +555,47 @@ function ClientsPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <Label>Kundentyp</Label>
+              <Select
+                value={form.client_type}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    client_type: v as "it" | "bau",
+                    credit_balance_input: v === "it" ? "" : form.credit_balance_input,
+                  })
+                }
+              >
+                <SelectTrigger className="bg-secondary">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="it">IT (ohne Guthaben)</SelectItem>
+                  <SelectItem value="bau">Bau (Guthaben möglich)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Bei Bau-Kunden können Sie ein Guthaben pflegen; es wird bei BAU-Rechnungen automatisch bis zur Höhe des Rechnungsbetrags angerechnet.
+              </p>
+            </div>
+            {form.client_type === "bau" && (
+              <div className="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-4">
+                <Label>Guthaben (EUR)</Label>
+                <Input
+                  value={form.credit_balance_input}
+                  onChange={(e) =>
+                    setForm({ ...form, credit_balance_input: e.target.value })
+                  }
+                  className="bg-secondary"
+                  placeholder="z.B. 1.500,00"
+                  inputMode="decimal"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Aktuelles verfügbares Guthaben dieses Kunden (manuell anpassbar).
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Notizen</Label>
               <Textarea

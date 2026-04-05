@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/app/app/AuthProvider";
-import { Transaction, TRANSACTION_TYPES } from "@/lib/types";
+import { Transaction } from "@/lib/types";
 import { formatCurrency } from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,16 +35,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Plus, Edit, Trash2, TrendingUp, TrendingDown, Loader2, FileText } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import { de } from "date-fns/locale";
-import { useRouter } from "next/navigation";
 import {
   LineChart,
   Line,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -53,10 +51,13 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+const CREDIT_CATEGORY = "Kundenguthaben (ohne Bank)";
+
 const INCOME_CATEGORIES = [
   "Rechnung",
   "Teilanzahlung",
   "Restzahlung",
+  CREDIT_CATEGORY,
   "Sonstige Einnahme",
   "Rückzahlung",
 ];
@@ -68,8 +69,15 @@ const EXPENSE_CATEGORIES = [
   "Marketing",
   "Steuern",
   "Versicherung",
+  CREDIT_CATEGORY,
   "Sonstige Ausgabe",
 ];
+
+const SALDO_INCLUDE_CRM_CREDIT_KEY = "plesnicar_tx_saldo_include_crm_credit";
+
+function isBankRelevant(t: Pick<Transaction, "affects_bank_balance">): boolean {
+  return t.affects_bank_balance !== false;
+}
 
 interface ExtendedTransaction {
   id: string;
@@ -79,6 +87,7 @@ interface ExtendedTransaction {
   category: string | null;
   date: string;
   notes: string | null;
+  affects_bank_balance?: boolean;
 }
 
 export default function TransactionsPage() {
@@ -87,9 +96,9 @@ export default function TransactionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all");
+  const [filterBank, setFilterBank] = useState<"all" | "bank" | "nonbank">("all");
   const [filterMonth, setFilterMonth] = useState<string>("all");
   const supabase = createClient();
-  const router = useRouter();
   const { canWrite } = useAuth();
 
   // Form state
@@ -99,15 +108,48 @@ export default function TransactionsPage() {
   const [category, setCategory] = useState("");
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [notes, setNotes] = useState("");
+  const [affectsBankBalance, setAffectsBankBalance] = useState(true);
+  const [crmCreditTotal, setCrmCreditTotal] = useState<number | null>(null);
+  const [saldoIncludeCrmCredit, setSaldoIncludeCrmCredit] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined") {
+        setSaldoIncludeCrmCredit(localStorage.getItem(SALDO_INCLUDE_CRM_CREDIT_KEY) === "1");
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     loadTransactions();
   }, [filterMonth]);
 
+  function persistSaldoIncludeCrmCredit(next: boolean) {
+    setSaldoIncludeCrmCredit(next);
+    try {
+      localStorage.setItem(SALDO_INCLUDE_CRM_CREDIT_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function loadCrmCreditStand() {
+    const { data, error } = await supabase.from("clients").select("credit_balance, client_type");
+    if (error || !data) {
+      setCrmCreditTotal(null);
+      return;
+    }
+    const sum = data
+      .filter((c) => (c.client_type as string) === "bau")
+      .reduce((s, c) => s + Math.max(0, Number(c.credit_balance ?? 0)), 0);
+    setCrmCreditTotal(sum);
+  }
+
   async function loadTransactions() {
     setLoading(true);
-    
-    // Load transactions (Einnahmen & Ausgaben werden manuell gepflegt)
+
     let query = supabase.from("transactions").select("*").order("date", { ascending: false });
 
     if (filterMonth !== "all") {
@@ -125,6 +167,7 @@ export default function TransactionsPage() {
       setTransactions(transactionsData || []);
     }
 
+    await loadCrmCreditStand();
     setLoading(false);
   }
 
@@ -136,6 +179,7 @@ export default function TransactionsPage() {
     setDate(format(new Date(), "yyyy-MM-dd"));
     setNotes("");
     setEditingId(null);
+    setAffectsBankBalance(true);
   }
 
   async function handleSave() {
@@ -156,6 +200,7 @@ export default function TransactionsPage() {
       category: category || null,
       date,
       notes: notes.trim() || null,
+      affects_bank_balance: affectsBankBalance,
     };
 
     if (editingId) {
@@ -208,6 +253,7 @@ export default function TransactionsPage() {
     setCategory(manualTransaction.category || "");
     setDate(manualTransaction.date);
     setNotes(manualTransaction.notes || "");
+    setAffectsBankBalance(isBankRelevant(manualTransaction));
     setDialogOpen(true);
   }
 
@@ -221,6 +267,7 @@ export default function TransactionsPage() {
       category: t.category,
       date: t.date,
       notes: t.notes,
+      affects_bank_balance: t.affects_bank_balance,
     }));
 
     // Nach Datum sortieren (neueste zuerst)
@@ -231,26 +278,45 @@ export default function TransactionsPage() {
     return combined;
   }, [transactions]);
 
-  // Filtered transactions
+  const scopedForStats = useMemo(() => {
+    let list = allTransactions;
+    if (filterType !== "all") {
+      list = list.filter((t) => t.type === filterType);
+    }
+    return list;
+  }, [allTransactions, filterType]);
+
   const filteredTransactions = useMemo(() => {
     let filtered = allTransactions;
     if (filterType !== "all") {
       filtered = filtered.filter((t) => t.type === filterType);
     }
+    if (filterBank === "bank") {
+      filtered = filtered.filter((t) => isBankRelevant(t));
+    } else if (filterBank === "nonbank") {
+      filtered = filtered.filter((t) => !isBankRelevant(t));
+    }
     return filtered;
-  }, [allTransactions, filterType]);
+  }, [allTransactions, filterType, filterBank]);
 
-  // Statistics
-  const stats = useMemo(() => {
-    const income = filteredTransactions
-      .filter((t) => t.type === "income")
-      .reduce((sum, t) => sum + t.amount, 0);
-    const expenses = filteredTransactions
-      .filter((t) => t.type === "expense")
-      .reduce((sum, t) => sum + t.amount, 0);
-    const net = income - expenses;
-    return { income, expenses, net };
-  }, [filteredTransactions]);
+  const summarize = (list: ExtendedTransaction[]) => {
+    const income = list.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+    const expenses = list.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+    return { income, expenses, net: income - expenses };
+  };
+
+  const statsBank = useMemo(
+    () => summarize(scopedForStats.filter((t) => isBankRelevant(t))),
+    [scopedForStats]
+  );
+
+  const saldoDisplayValue = useMemo(() => {
+    if (!saldoIncludeCrmCredit) return statsBank.net;
+    const crm = crmCreditTotal ?? 0;
+    return statsBank.net + crm;
+  }, [statsBank.net, saldoIncludeCrmCredit, crmCreditTotal]);
+
+  const saldoDisplayLoading = saldoIncludeCrmCredit && loading && crmCreditTotal === null;
 
   // Chart data (letzte 6 Monate) – nur manuelle Transaktionen
   const chartData = useMemo(() => {
@@ -268,11 +334,13 @@ export default function TransactionsPage() {
           t.date <= format(monthEnd, "yyyy-MM-dd")
       );
 
-      const monthIncome = monthTransactions
+      const monthBank = monthTransactions.filter((t) => isBankRelevant(t));
+
+      const monthIncome = monthBank
         .filter((t) => t.type === "income")
         .reduce((sum, t) => sum + t.amount, 0);
 
-      const monthExpenses = monthTransactions
+      const monthExpenses = monthBank
         .filter((t) => t.type === "expense")
         .reduce((sum, t) => sum + t.amount, 0);
 
@@ -302,10 +370,14 @@ export default function TransactionsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-2">
           <h1 className="text-3xl font-bold text-foreground">Einnahmen & Ausgaben</h1>
-          <p className="text-muted-foreground mt-1">Verwalten Sie Ihre Finanzen</p>
+          <p className="text-muted-foreground">Verwalten Sie Ihre Finanzen</p>
+          <p className="text-sm text-muted-foreground max-w-xl">
+            Einnahmen und Ausgaben: Bank-Buchungen. Beim Saldo können Sie optional das Kundenguthaben aus den CRM-Profilen
+            (Bau-Kunden) dazurechnen — rein zur Orientierung, nicht Ihr Kontostand.
+          </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           if (!canWrite) return;
@@ -314,7 +386,7 @@ export default function TransactionsPage() {
         }}>
           <DialogTrigger asChild>
             <Button
-              className="bg-primary text-primary-foreground hover:bg-red-700"
+              className="shrink-0 bg-primary text-primary-foreground hover:bg-red-700"
               disabled={!canWrite}
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -364,7 +436,14 @@ export default function TransactionsPage() {
               </div>
               <div className="space-y-2">
                 <Label>Kategorie (optional)</Label>
-                <Select value={category} onValueChange={setCategory}>
+                <Select
+                  value={category}
+                  onValueChange={(v) => {
+                    setCategory(v);
+                    if (v === CREDIT_CATEGORY) setAffectsBankBalance(false);
+                    else setAffectsBankBalance(true);
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Kategorie wählen" />
                   </SelectTrigger>
@@ -376,6 +455,21 @@ export default function TransactionsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex flex-row items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/15 px-3 py-3">
+                <div className="space-y-0.5 min-w-0">
+                  <Label htmlFor="tx-bank-switch" className="text-foreground">
+                    In Bank-Saldo einrechnen
+                  </Label>
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    Aus = Guthaben / Verrechnung ohne echte Bankbewegung
+                  </p>
+                </div>
+                <Switch
+                  id="tx-bank-switch"
+                  checked={affectsBankBalance}
+                  onCheckedChange={setAffectsBankBalance}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Datum</Label>
@@ -407,55 +501,96 @@ export default function TransactionsPage() {
         </Dialog>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Einnahmen
-            </CardTitle>
-            <TrendingUp className="h-5 w-5 text-green-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-400">
-              {formatCurrency(stats.income)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Ausgaben
-            </CardTitle>
-            <TrendingDown className="h-5 w-5 text-red-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-400">
-              {formatCurrency(stats.expenses)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Saldo
-            </CardTitle>
-            <div className={`h-5 w-5 ${stats.net >= 0 ? "text-green-400" : "text-red-400"}`}>
-              {stats.net >= 0 ? <TrendingUp /> : <TrendingDown />}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${stats.net >= 0 ? "text-green-400" : "text-red-400"}`}>
-              {formatCurrency(stats.net)}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <section className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Übersicht Einnahmen & Ausgaben</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Nur Bank-Buchungen — gleicher Zeitraum und Typ-Filter wie die Tabelle.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 rounded-2xl border border-border/50 bg-muted/10 px-3.5 py-3 backdrop-blur-md sm:flex-row sm:items-center sm:gap-3 sm:py-2.5">
+            <Label htmlFor="saldo-include-crm" className="text-sm font-medium text-foreground cursor-pointer shrink-0">
+              Kundenguthaben im Saldo
+            </Label>
+            <Switch
+              id="saldo-include-crm"
+              checked={saldoIncludeCrmCredit}
+              onCheckedChange={persistSaldoIncludeCrmCredit}
+              className="shrink-0"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Card className="border-border/60 bg-card/80 backdrop-blur-md shadow-none">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Einnahmen</CardTitle>
+              <TrendingUp className="h-5 w-5 text-green-400/90" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-400 tabular-nums tracking-tight">
+                {formatCurrency(statsBank.income)}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-border/60 bg-card/80 backdrop-blur-md shadow-none">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Ausgaben</CardTitle>
+              <TrendingDown className="h-5 w-5 text-red-400/90" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-400 tabular-nums tracking-tight">
+                {formatCurrency(statsBank.expenses)}
+              </div>
+            </CardContent>
+          </Card>
+          <Card
+            className={
+              saldoIncludeCrmCredit
+                ? "border-amber-500/30 bg-amber-500/[0.07] backdrop-blur-md shadow-none"
+                : "border-primary/30 bg-primary/[0.07] backdrop-blur-md shadow-none"
+            }
+          >
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-foreground">
+                Saldo{saldoIncludeCrmCredit ? " · inkl. CRM" : ""}
+              </CardTitle>
+              <div className={`h-5 w-5 ${saldoDisplayValue >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {saldoDisplayValue >= 0 ? <TrendingUp /> : <TrendingDown />}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {saldoDisplayLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground py-1">
+                  <Loader2 className="h-6 w-6 animate-spin shrink-0 opacity-70" />
+                </div>
+              ) : (
+                <div
+                  className={`text-2xl font-bold tabular-nums tracking-tight ${saldoDisplayValue >= 0 ? "text-green-400" : "text-red-400"}`}
+                >
+                  {formatCurrency(saldoDisplayValue)}
+                </div>
+              )}
+              {saldoIncludeCrmCredit && !saldoDisplayLoading && crmCreditTotal !== null && (
+                <p className="text-[11px] text-muted-foreground mt-2 leading-snug tabular-nums">
+                  Bank {formatCurrency(statsBank.net)} + Guthaben {formatCurrency(crmCreditTotal)}
+                </p>
+              )}
+              <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
+                {saldoIncludeCrmCredit
+                  ? "Orientierung nur — CRM-Guthaben liegt nicht auf dem Konto."
+                  : "Entspricht nicht automatisch dem Kontostand."}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
       {/* Chart */}
       <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle>Entwicklung (6 Monate)</CardTitle>
+          <CardTitle>Entwicklung Bank-Saldo (6 Monate)</CardTitle>
+          <p className="text-sm text-muted-foreground font-normal">Nur Transaktionen mit Bankabgleich</p>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
@@ -484,7 +619,7 @@ export default function TransactionsPage() {
       </Card>
 
       {/* Filters */}
-      <div className="flex gap-4">
+      <div className="flex flex-wrap gap-4">
         <Select value={filterType} onValueChange={(v) => setFilterType(v as typeof filterType)}>
           <SelectTrigger className="w-40">
             <SelectValue />
@@ -493,6 +628,16 @@ export default function TransactionsPage() {
             <SelectItem value="all">Alle</SelectItem>
             <SelectItem value="income">Einnahmen</SelectItem>
             <SelectItem value="expense">Ausgaben</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterBank} onValueChange={(v) => setFilterBank(v as typeof filterBank)}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Buchungen</SelectItem>
+            <SelectItem value="bank">Nur Bank</SelectItem>
+            <SelectItem value="nonbank">Nur Guthaben</SelectItem>
           </SelectContent>
         </Select>
         <Select value={filterMonth} onValueChange={setFilterMonth}>
@@ -531,6 +676,7 @@ export default function TransactionsPage() {
                   <TableHead>Typ</TableHead>
                   <TableHead>Beschreibung</TableHead>
                   <TableHead>Kategorie</TableHead>
+                  <TableHead>Bank</TableHead>
                   <TableHead className="text-right">Betrag</TableHead>
                   <TableHead className="text-right">Aktionen</TableHead>
                 </TableRow>
@@ -564,6 +710,17 @@ export default function TransactionsPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {transaction.category || "–"}
+                    </TableCell>
+                    <TableCell>
+                      {isBankRelevant(transaction) ? (
+                        <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                          Bank
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-400">
+                          Guthaben
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className={`text-right font-semibold ${transaction.type === "income" ? "text-green-400" : "text-red-400"}`}>
                       {transaction.type === "income" ? "+" : "-"}
