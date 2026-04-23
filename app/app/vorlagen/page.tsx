@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, ArrowLeft, Printer } from "lucide-react";
+import { FileText, ArrowLeft, Printer, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -24,7 +24,7 @@ export default function VorlagenPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card className="border-border bg-card">
+        <Card className="border-border/60 bg-card/80 backdrop-blur-xl shadow-none">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <FileText className="h-5 w-5" />
@@ -39,6 +39,32 @@ export default function VorlagenPage() {
               <Link href="/app/vorlagen/formular" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2">
                 <Printer className="h-4 w-4" />
                 Anzeigen & Drucken
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60 bg-card/80 backdrop-blur-xl shadow-none">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Kundenanlageblatt
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Eine A4-Seite, tabellarisch wie ein klassisches Stammdatenblatt: Gewerbe/Privat-Häkchen, Felder
+              nebeneinander (Vor-/Nachname, PLZ/Ort, UID/FB, Telefon/Mobil), Baustellenadresse und Unterschrift.
+            </p>
+            <Button asChild>
+              <Link
+                href="/app/vorlagen/kundenanlage"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2"
+              >
+                <Printer className="h-4 w-4" />
+                Öffnen, Drucken & PDF
               </Link>
             </Button>
           </CardContent>
