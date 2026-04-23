@@ -14,6 +14,14 @@ import {
   PACKAGE_PRESETS,
 } from "@/lib/types";
 import { calculateOffer, formatCurrency } from "@/lib/calculations";
+import { bauLineTotal } from "@/lib/bau-invoice-rows";
+import {
+  type BauFormRow,
+  defaultBauPositionRow,
+  offerItemsToBauFormRows,
+  buildBauOfferItemInserts,
+  bauFormRowsToOfferCalcLineItems,
+} from "@/lib/bau-offer-rows";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,10 +84,8 @@ export default function EditOfferPage() {
     { position: 1, service_name: "", hours: 0, hourly_rate: 55, discount_percent: 0, net_total: 0 },
   ]);
 
-  // BAU Line items – Beschreibung, Anzahl, Einheit, Einheitspreis, Rabatt %, Gesamt
-  const [bauItems, setBauItems] = useState<
-    Array<{ id: string; description: string; quantity: number; unit: string; price: number; discount_percent: number }>
-  >([{ id: "1", description: "", quantity: 1, unit: "Stk", price: 0, discount_percent: 0 }]);
+  // BAU Line items – gleiche Datenstruktur wie Rechnung BAU (BauFormRow)
+  const [bauItems, setBauItems] = useState<BauFormRow[]>([defaultBauPositionRow("1")]);
 
   // Global controls
   const [globalDiscount, setGlobalDiscount] = useState(0);
@@ -95,23 +101,7 @@ export default function EditOfferPage() {
     Array<{ id: string; title: string; description: string; price: number }>
   >([]);
 
-  // BAU: net_total = Anzahl × Einheitspreis × (1 − Rabatt % / 100)
-  const bauItemsAsOfferItems = useMemo(() => {
-    return bauItems.map((item, idx) => {
-      const q = item.quantity || 1;
-      const p = item.price || 0;
-      const d = item.discount_percent ?? 0;
-      const net = q * p * (1 - d / 100);
-      return {
-        position: idx + 1,
-        service_name: item.description,
-        hours: undefined,
-        hourly_rate: undefined,
-        discount_percent: d,
-        net_total: net,
-      };
-    });
-  }, [bauItems]);
+  const bauItemsAsOfferItems = useMemo(() => bauFormRowsToOfferCalcLineItems(bauItems), [bauItems]);
 
   // Calculations
   const calc = useMemo(() => {
@@ -207,15 +197,7 @@ export default function EditOfferPage() {
         const offerTypeFromData = (offer.offer_type as "it" | "bau") || "it";
 
         if (offerTypeFromData === "bau") {
-          const bauItemsData = itemsRes.data.map((item: any, idx: number) => ({
-            id: item.id || `item-${idx}`,
-            description: item.service_name || "",
-            quantity: 1,
-            unit: "Stk",
-            price: item.net_total || 0,
-            discount_percent: item.discount_percent ?? 0,
-          }));
-          setBauItems(bauItemsData.length > 0 ? bauItemsData : [{ id: "1", description: "", quantity: 1, unit: "Stk", price: 0, discount_percent: 0 }]);
+          setBauItems(offerItemsToBauFormRows(itemsRes.data as OfferItem[]));
         } else {
           // IT items – 1:1 wie Rechnung: dynamische Liste, keine festen SERVICE_NAMES
           const existingItems = itemsRes.data.map((item: any) => ({
@@ -300,14 +282,15 @@ export default function EditOfferPage() {
 
   // BAU functions – 1:1 wie Rechnung (Anzahl, Einheit, Preis)
   function addBauItem() {
-    setBauItems((prev) => [
-      ...prev,
-      { id: Date.now().toString(), description: "", quantity: 1, unit: "Stk", price: 0, discount_percent: 0 },
-    ]);
+    setBauItems((prev) => [...prev, defaultBauPositionRow(Date.now().toString())]);
   }
 
   function removeBauItem(id: string) {
-    setBauItems((prev) => prev.filter((item) => item.id !== id));
+    setBauItems((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      if (next.length === 0) return [defaultBauPositionRow("1")];
+      return next;
+    });
   }
 
   function updateBauItem(
@@ -317,7 +300,7 @@ export default function EditOfferPage() {
   ) {
     setBauItems((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
+        item.id === id && item.kind === "position" ? { ...item, [field]: value } : item
       )
     );
   }
@@ -403,41 +386,25 @@ export default function EditOfferPage() {
     if (offerType === "it") {
       itemsToInsert = items
         .filter((item) => (item.hours || 0) > 0)
-        .map((item) => ({
-          offer_id: offerId,
-          position: item.position,
-          service_name: item.service_name,
-          hours: item.hours ?? 0, // Ensure it's never undefined
-          hourly_rate: item.hourly_rate ?? 55, // Ensure it's never undefined
-          discount_percent: item.discount_percent,
-          net_total:
-            (item.hours || 0) *
-            (item.hourly_rate || 0) *
-            (1 - item.discount_percent / 100),
-        }));
-    } else {
-      // BAU – net_total = Anzahl × Einheitspreis
-      itemsToInsert = bauItems
-        .filter((item) => {
-          const q = item.quantity || 1;
-          const p = item.price || 0;
-          const d = item.discount_percent ?? 0;
-          return item.description.trim() && q * p * (1 - d / 100) > 0;
-        })
-        .map((item, idx) => {
-          const q = item.quantity || 1;
-          const p = item.price || 0;
-          const d = item.discount_percent ?? 0;
+        .map((item) => {
+          const h = item.hours ?? 0;
+          const r = item.hourly_rate ?? 55;
+          const d = item.discount_percent;
           return {
             offer_id: offerId,
-            position: idx + 1,
-            service_name: item.description,
-            hours: null,
-            hourly_rate: null,
+            position: item.position,
+            service_name: item.service_name,
+            hours: h,
+            hourly_rate: r,
             discount_percent: d,
-            net_total: q * p * (1 - d / 100),
+            net_total: h * r * (1 - d / 100),
+            quantity: h,
+            unit: "Std.",
+            unit_price: r,
           };
         });
+    } else {
+      itemsToInsert = buildBauOfferItemInserts(offerId, bauItems);
     }
 
     if (itemsToInsert.length > 0) {
@@ -740,7 +707,9 @@ export default function EditOfferPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {bauItems.map((item, idx) => (
+                    {bauItems.map((item, idx) => {
+                      if (item.kind !== "position") return null;
+                      return (
                       <div key={item.id} className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50">
                         <div className="flex-shrink-0 pt-2 text-sm text-muted-foreground w-8">{idx + 1}.</div>
                         <div className="flex-1 space-y-2">
@@ -786,7 +755,7 @@ export default function EditOfferPage() {
                               className="bg-background w-24"
                             />
                             <span className="text-sm font-medium">
-                              = {formatCurrency(((item.quantity || 1) * (item.price || 0) * (1 - (item.discount_percent ?? 0) / 100)))}
+                              = {formatCurrency(bauLineTotal(item.quantity, item.price, item.discount_percent ?? 0))}
                             </span>
                           </div>
                         </div>
@@ -800,7 +769,8 @@ export default function EditOfferPage() {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>

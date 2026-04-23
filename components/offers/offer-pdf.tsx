@@ -297,14 +297,28 @@ function buildOfferTableRows(
   items.forEach((item) => {
     if (isBau) {
       const d = item.discount_percent ?? 0;
+      const net = Number(item.net_total ?? 0);
+      const qty =
+        item.quantity != null && !Number.isNaN(Number(item.quantity))
+          ? Number(item.quantity)
+          : 1;
+      const unit = (item.unit as string) || "Stk";
+      const unitPrice =
+        item.unit_price != null && !Number.isNaN(Number(item.unit_price))
+          ? Number(item.unit_price)
+          : d >= 100
+            ? net
+            : net === 0
+              ? 0
+              : net / (1 - d / 100);
       rows.push({
         description: item.service_name,
-        quantity: 1,
-        unit: "Stk",
-        unit_price: item.net_total,
+        quantity: qty,
+        unit,
+        unit_price: unitPrice,
         vat_percent: vatPct,
         discount_percent: d,
-        total: item.net_total,
+        total: net,
       });
     } else {
       const hours = item.hours ?? 0;

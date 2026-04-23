@@ -301,24 +301,65 @@ export default function OfferDetailPage() {
               <TableRow className="border-border hover:bg-transparent">
                 <TableHead>Pos.</TableHead>
                 <TableHead>Leistung</TableHead>
-                {offer.offer_type !== "bau" && (
+                {offer.offer_type === "bau" ? (
+                  <>
+                    <TableHead className="text-right">Anzahl</TableHead>
+                    <TableHead className="text-center">Einheit</TableHead>
+                    <TableHead className="text-right">Einheitspreis</TableHead>
+                    <TableHead className="text-right">Rabatt</TableHead>
+                    <TableHead className="text-right">Gesamt</TableHead>
+                  </>
+                ) : (
                   <>
                     <TableHead className="text-right">Std.</TableHead>
                     <TableHead className="text-right">€/h</TableHead>
                     <TableHead className="text-right">Rabatt</TableHead>
+                    <TableHead className="text-right">Preis (€)</TableHead>
                   </>
                 )}
-                <TableHead className="text-right">Preis (€)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((item) => (
+              {items.map((item) => {
+                const isBau = offer.offer_type === "bau";
+                const d = item.discount_percent ?? 0;
+                const net = Number(item.net_total ?? 0);
+                const qty =
+                  isBau && item.quantity != null && !Number.isNaN(Number(item.quantity))
+                    ? Number(item.quantity)
+                    : isBau
+                      ? 1
+                      : 0;
+                const unit = isBau ? (item.unit as string) || "Stk" : "";
+                const unitPrice =
+                  isBau && item.unit_price != null && !Number.isNaN(Number(item.unit_price))
+                    ? Number(item.unit_price)
+                    : isBau
+                      ? d >= 100
+                        ? net
+                        : net === 0
+                          ? 0
+                          : net / (1 - d / 100)
+                      : 0;
+                return (
                 <TableRow key={item.id} className="border-border">
                   <TableCell className="text-muted-foreground">
                     {item.position}
                   </TableCell>
                   <TableCell className="font-medium">{item.service_name}</TableCell>
-                  {offer.offer_type !== "bau" && (
+                  {offer.offer_type === "bau" ? (
+                    <>
+                      <TableCell className="text-right tabular-nums">{qty.toFixed(2)}</TableCell>
+                      <TableCell className="text-center">{unit}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(unitPrice)}</TableCell>
+                      <TableCell className="text-right">
+                        {d > 0 ? `${d}%` : "–"}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(net)}
+                      </TableCell>
+                    </>
+                  ) : (
                     <>
                       <TableCell className="text-right">{item.hours || 0}</TableCell>
                       <TableCell className="text-right">
@@ -327,29 +368,39 @@ export default function OfferDetailPage() {
                       <TableCell className="text-right">
                         {item.discount_percent > 0 ? `${item.discount_percent}%` : "–"}
                       </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(item.net_total)}
+                      </TableCell>
                     </>
                   )}
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(item.net_total)}
-                  </TableCell>
                 </TableRow>
-              ))}
+              );})}
               {addons.map((addon, idx) => (
                 <TableRow key={addon.id} className="border-border">
                   <TableCell className="text-muted-foreground">
                     {items.length + idx + 1}
                   </TableCell>
                   <TableCell className="font-medium">{addon.title}</TableCell>
-                  {offer.offer_type !== "bau" && (
+                  {offer.offer_type === "bau" ? (
+                    <>
+                      <TableCell className="text-right tabular-nums">1.00</TableCell>
+                      <TableCell className="text-center">Stk</TableCell>
+                      <TableCell className="text-right">{formatCurrency(Number(addon.price))}</TableCell>
+                      <TableCell className="text-right">–</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(Number(addon.price))}
+                      </TableCell>
+                    </>
+                  ) : (
                     <>
                       <TableCell className="text-right">–</TableCell>
                       <TableCell className="text-right">–</TableCell>
                       <TableCell className="text-right">–</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(Number(addon.price))}
+                      </TableCell>
                     </>
                   )}
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(Number(addon.price))}
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

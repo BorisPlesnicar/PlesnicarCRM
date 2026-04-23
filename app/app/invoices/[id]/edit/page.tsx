@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Client, Project, Offer, InvoiceItem, Invoice } from "@/lib/types";
+import { Client, Project, Offer, OfferItem, InvoiceItem, Invoice } from "@/lib/types";
 import {
   type BauFormRow,
   bauRowsToCalcLineItems,
@@ -13,6 +13,7 @@ import {
   invoiceItemsToBauFormRows,
   bauLineTotal,
 } from "@/lib/bau-invoice-rows";
+import { offerItemsToBauFormRows, offerItemsToItInvoiceItems } from "@/lib/bau-offer-rows";
 import {
   formatCurrency,
   parseGermanAmount,
@@ -351,30 +352,9 @@ export default function EditInvoicePage() {
       .then(({ data }) => {
         if (data?.length) {
           if (offer.offer_type === "bau") {
-            setBauItems(
-              data.map((item, idx) => ({
-                id: String(idx + 1),
-                kind: "position" as const,
-                description: item.service_name,
-                quantity: 1,
-                unit: "Stk",
-                price: item.net_total || 0,
-                discount_percent: item.discount_percent ?? 0,
-              }))
-            );
+            setBauItems(offerItemsToBauFormRows(data as OfferItem[]));
           } else {
-            setItems(
-              data.map((item, idx) => ({
-                position: idx + 1,
-                description: item.service_name,
-                quantity: 1,
-                unit: "Stk",
-                unit_price: item.net_total || 0,
-                vat_percent: offer.vat_percent || 0,
-                discount_percent: 0,
-                total: item.net_total || 0,
-              }))
-            );
+            setItems(offerItemsToItInvoiceItems(data as OfferItem[], offer.vat_percent || 0));
           }
           setVatPercent(offer.vat_percent || 0);
           toast.success("Positionen vom Angebot übernommen");

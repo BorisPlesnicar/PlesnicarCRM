@@ -12,6 +12,13 @@ import {
   PACKAGE_PRESETS,
 } from "@/lib/types";
 import { calculateOffer, formatCurrency } from "@/lib/calculations";
+import { bauLineTotal } from "@/lib/bau-invoice-rows";
+import {
+  type BauFormRow,
+  defaultBauPositionRow,
+  buildBauOfferItemInserts,
+  bauFormRowsToOfferCalcLineItems,
+} from "@/lib/bau-offer-rows";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,10 +84,7 @@ function NewOfferPage() {
     { position: 1, service_name: "", hours: 0, hourly_rate: 55, discount_percent: 0, net_total: 0 },
   ]);
 
-  // BAU Line items – Beschreibung, Anzahl, Einheit, Einheitspreis, Rabatt %, Gesamt
-  const [bauItems, setBauItems] = useState<
-    Array<{ id: string; description: string; quantity: number; unit: string; price: number; discount_percent: number }>
-  >([{ id: "1", description: "", quantity: 1, unit: "Stk", price: 0, discount_percent: 0 }]);
+  const [bauItems, setBauItems] = useState<BauFormRow[]>([defaultBauPositionRow("1")]);
 
   // Global controls
   const [globalDiscount, setGlobalDiscount] = useState(0);
@@ -96,22 +100,7 @@ function NewOfferPage() {
     Array<{ id: string; title: string; description: string; price: number }>
   >([]);
 
-  const bauItemsAsOfferItems = useMemo(() => {
-    return bauItems.map((item, idx) => {
-      const q = item.quantity || 1;
-      const p = item.price || 0;
-      const d = item.discount_percent ?? 0;
-      const net = q * p * (1 - d / 100);
-      return {
-        position: idx + 1,
-        service_name: item.description,
-        hours: undefined,
-        hourly_rate: undefined,
-        discount_percent: d,
-        net_total: net,
-      };
-    });
-  }, [bauItems]);
+  const bauItemsAsOfferItems = useMemo(() => bauFormRowsToOfferCalcLineItems(bauItems), [bauItems]);
 
   // Calculations
   const calc = useMemo(() => {
@@ -236,14 +225,15 @@ function NewOfferPage() {
   }
 
   function addBauItem() {
-    setBauItems((prev) => [
-      ...prev,
-      { id: Date.now().toString(), description: "", quantity: 1, unit: "Stk", price: 0, discount_percent: 0 },
-    ]);
+    setBauItems((prev) => [...prev, defaultBauPositionRow(Date.now().toString())]);
   }
 
   function removeBauItem(id: string) {
-    setBauItems((prev) => prev.filter((item) => item.id !== id));
+    setBauItems((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      if (next.length === 0) return [defaultBauPositionRow("1")];
+      return next;
+    });
   }
 
   function updateBauItem(
@@ -253,7 +243,7 @@ function NewOfferPage() {
   ) {
     setBauItems((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
+        item.id === id && item.kind === "position" ? { ...item, [field]: value } : item
       )
     );
   }
@@ -337,40 +327,25 @@ function NewOfferPage() {
     if (offerType === "it") {
       itemsToInsert = items
         .filter((item) => (item.hours || 0) > 0)
-        .map((item) => ({
-          offer_id: offer.id,
-          position: item.position,
-          service_name: item.service_name,
-          hours: item.hours ?? 0, // Ensure it's never undefined
-          hourly_rate: item.hourly_rate ?? 55, // Ensure it's never undefined
-          discount_percent: item.discount_percent,
-          net_total:
-            (item.hours || 0) *
-            (item.hourly_rate || 0) *
-            (1 - item.discount_percent / 100),
-        }));
-    } else {
-      itemsToInsert = bauItems
-        .filter((item) => {
-          const q = item.quantity || 1;
-          const p = item.price || 0;
-          const d = item.discount_percent ?? 0;
-          return item.description.trim() && q * p * (1 - d / 100) > 0;
-        })
-        .map((item, idx) => {
-          const q = item.quantity || 1;
-          const p = item.price || 0;
-          const d = item.discount_percent ?? 0;
+        .map((item) => {
+          const h = item.hours ?? 0;
+          const r = item.hourly_rate ?? 55;
+          const d = item.discount_percent;
           return {
             offer_id: offer.id,
-            position: idx + 1,
-            service_name: item.description,
-            hours: null,
-            hourly_rate: null,
+            position: item.position,
+            service_name: item.service_name,
+            hours: h,
+            hourly_rate: r,
             discount_percent: d,
-            net_total: q * p * (1 - d / 100),
+            net_total: h * r * (1 - d / 100),
+            quantity: h,
+            unit: "Std.",
+            unit_price: r,
           };
         });
+    } else {
+      itemsToInsert = buildBauOfferItemInserts(offer.id, bauItems);
     }
 
     if (itemsToInsert.length > 0) {
@@ -678,7 +653,9 @@ function NewOfferPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {bauItems.map((item, idx) => (
+                    {bauItems.map((item, idx) => {
+                      if (item.kind !== "position") return null;
+                      return (
                       <div key={item.id} className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50">
                         <div className="flex-shrink-0 pt-2 text-sm text-muted-foreground w-8">{idx + 1}.</div>
                         <div className="flex-1 space-y-2">
@@ -724,7 +701,7 @@ function NewOfferPage() {
                               className="bg-background w-24"
                             />
                             <span className="text-sm font-medium">
-                              = {formatCurrency(((item.quantity || 1) * (item.price || 0) * (1 - (item.discount_percent ?? 0) / 100)))}
+                              = {formatCurrency(bauLineTotal(item.quantity, item.price, item.discount_percent ?? 0))}
                             </span>
                           </div>
                         </div>
@@ -738,7 +715,8 @@ function NewOfferPage() {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Client, Project, Offer, InvoiceItem } from "@/lib/types";
+import { Client, Project, Offer, InvoiceItem, OfferItem } from "@/lib/types";
 import {
   formatCurrency,
   parseGermanAmount,
@@ -35,6 +35,7 @@ import {
   defaultBauPositionRow,
   bauLineTotal,
 } from "@/lib/bau-invoice-rows";
+import { offerItemsToBauFormRows, offerItemsToItInvoiceItems } from "@/lib/bau-offer-rows";
 import { useAuth } from "@/app/app/AuthProvider";
 
 const InvoicePDF = dynamic(() => import("@/components/invoices/invoice-pdf"), {
@@ -365,30 +366,9 @@ export default function NewInvoicePage() {
       .then(({ data }) => {
         if (data && data.length > 0) {
           if (offer.offer_type === "bau") {
-            // BAU: use as BAU items
-            const bauItemsData: BauFormRow[] = data.map((item, idx) => ({
-              id: (idx + 1).toString(),
-              kind: "position" as const,
-              description: item.service_name,
-              quantity: 1,
-              unit: "Stk",
-              price: item.net_total || 0,
-              discount_percent: item.discount_percent ?? 0,
-            }));
-            setBauItems(bauItemsData);
+            setBauItems(offerItemsToBauFormRows(data as OfferItem[]));
           } else {
-            // IT: use as IT items
-            const invoiceItems: InvoiceItem[] = data.map((item, idx) => ({
-              position: idx + 1,
-              description: item.service_name,
-              quantity: 1,
-              unit: "Stk",
-              unit_price: item.net_total || 0,
-              vat_percent: offer.vat_percent || 0,
-              discount_percent: 0,
-              total: item.net_total || 0,
-            }));
-            setItems(invoiceItems);
+            setItems(offerItemsToItInvoiceItems(data as OfferItem[], offer.vat_percent || 0));
           }
           setVatPercent(offer.vat_percent || 0);
           toast.success("Positionen vom Angebot übernommen");

@@ -80,6 +80,11 @@ export interface OfferItem {
   hourly_rate?: number; // Optional for BAU
   discount_percent: number;
   net_total: number;
+  /** BAU: Stückzahl (wie invoice_items); IT: Spiegel von hours */
+  quantity?: number | null;
+  unit?: string | null;
+  /** BAU: Einheitspreis netto; IT: Stundensatz */
+  unit_price?: number | null;
 }
 
 export interface OfferAddon {
