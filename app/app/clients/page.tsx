@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -34,7 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Plus, Search, Pencil, Trash2, Loader2, Eye } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Loader2, Eye, Wallet, RotateCcw } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function ClientsPageWrapper() {
@@ -69,6 +70,28 @@ type ClientFormState = {
   credit_balance_input: string;
 };
 
+type PrepaymentFormState = {
+  client_id: string;
+  amount_input: string;
+  date: string;
+  note: string;
+  affects_bank: boolean;
+};
+
+function todayISO(): string {
+  const d = new Date();
+  const tz = d.getTimezoneOffset();
+  return new Date(d.getTime() - tz * 60000).toISOString().slice(0, 10);
+}
+
+function formatCreditInput(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  return new Intl.NumberFormat("de-DE", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
 const emptyClient: ClientFormState = {
   name: "",
   company: "",
@@ -81,6 +104,14 @@ const emptyClient: ClientFormState = {
   credit_balance_input: "",
 };
 
+const emptyPrepayment: PrepaymentFormState = {
+  client_id: "",
+  amount_input: "",
+  date: "",
+  note: "",
+  affects_bank: true,
+};
+
 function ClientsPage() {
   const { canWrite } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
@@ -91,6 +122,13 @@ function ClientsPage() {
   const [editClient, setEditClient] = useState<Partial<Client> | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyClient);
+  const [originalCreditInput, setOriginalCreditInput] = useState<string>("");
+  const [savingCreditInline, setSavingCreditInline] = useState(false);
+
+  const [prepayDialogOpen, setPrepayDialogOpen] = useState(false);
+  const [prepayForm, setPrepayForm] = useState<PrepaymentFormState>(emptyPrepayment);
+  const [savingPrepay, setSavingPrepay] = useState(false);
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -120,12 +158,17 @@ function ClientsPage() {
     if (!canWrite) return;
     setEditClient(null);
     setForm(emptyClient);
+    setOriginalCreditInput("");
     setDialogOpen(true);
   }
 
   function openEdit(client: Client) {
     if (!canWrite) return;
     setEditClient(client);
+    const creditInput =
+      client.client_type === "bau" && client.credit_balance != null && Number.isFinite(client.credit_balance)
+        ? formatCreditInput(client.credit_balance)
+        : "";
     setForm({
       name: client.name,
       company: client.company,
@@ -135,15 +178,42 @@ function ClientsPage() {
       notes: client.notes,
       status: client.status,
       client_type: client.client_type === "bau" ? "bau" : "it",
-      credit_balance_input:
-        client.client_type === "bau" && client.credit_balance != null && Number.isFinite(client.credit_balance)
-          ? new Intl.NumberFormat("de-DE", {
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 2,
-            }).format(client.credit_balance)
-          : "",
+      credit_balance_input: creditInput,
     });
+    setOriginalCreditInput(creditInput);
     setDialogOpen(true);
+  }
+
+  function resetCreditInput() {
+    setForm((f) => ({ ...f, credit_balance_input: originalCreditInput }));
+  }
+
+  async function saveCreditInline() {
+    if (!canWrite || !editClient?.id) return;
+    if (form.client_type !== "bau") {
+      toast.error("Guthaben nur bei Bau-Kunden möglich");
+      return;
+    }
+    const parsed = parseGermanAmount(form.credit_balance_input);
+    const next = Math.max(0, parsed ?? 0);
+    setSavingCreditInline(true);
+    const { error } = await supabase
+      .from("clients")
+      .update({ credit_balance: next })
+      .eq("id", editClient.id);
+    setSavingCreditInline(false);
+    if (error) {
+      toast.error("Guthaben konnte nicht gespeichert werden", {
+        description: error.message,
+      });
+      return;
+    }
+    const formatted = formatCreditInput(next);
+    setOriginalCreditInput(formatted);
+    setForm((f) => ({ ...f, credit_balance_input: formatted }));
+    setEditClient((c) => (c ? { ...c, credit_balance: next } : c));
+    toast.success(`Guthaben auf ${formatCurrency(next)} gesetzt`);
+    loadClients();
   }
 
   async function handleSave() {
@@ -154,6 +224,9 @@ function ClientsPage() {
     }
     setSaving(true);
     const creditParsed = parseGermanAmount(form.credit_balance_input);
+    const credit =
+      form.client_type === "bau" ? Math.max(0, creditParsed ?? 0) : 0;
+
     const payload = {
       name: form.name.trim(),
       company: form.company,
@@ -163,9 +236,9 @@ function ClientsPage() {
       notes: form.notes,
       status: form.status,
       client_type: form.client_type,
-      credit_balance:
-        form.client_type === "bau" ? Math.max(0, creditParsed ?? 0) : 0,
+      credit_balance: credit,
     };
+
     if (editClient?.id) {
       const { error } = await supabase
         .from("clients")
@@ -189,6 +262,81 @@ function ClientsPage() {
       }
     }
     setSaving(false);
+  }
+
+  function openPrepayDialog(presetClientId?: string) {
+    if (!canWrite) return;
+    setPrepayForm({
+      ...emptyPrepayment,
+      client_id: presetClientId ?? "",
+      date: todayISO(),
+    });
+    setPrepayDialogOpen(true);
+  }
+
+  async function handlePrepaySave() {
+    if (!canWrite) return;
+    const targetClient = clients.find((c) => c.id === prepayForm.client_id);
+    if (!targetClient) {
+      toast.error("Bitte einen Kunden auswählen");
+      return;
+    }
+    if (targetClient.client_type !== "bau") {
+      toast.error("Anzahlungen nur bei Bau-Kunden möglich");
+      return;
+    }
+    const amountParsed = parseGermanAmount(prepayForm.amount_input);
+    if (!amountParsed || amountParsed <= 0) {
+      toast.error("Bitte einen gültigen Betrag eingeben");
+      return;
+    }
+    setSavingPrepay(true);
+    const dateStr = prepayForm.date && prepayForm.date.length >= 10
+      ? prepayForm.date.slice(0, 10)
+      : todayISO();
+    const currentBalance = Math.max(0, Number(targetClient.credit_balance ?? 0));
+    const nextBalance = currentBalance + amountParsed;
+
+    const { error: clientErr } = await supabase
+      .from("clients")
+      .update({ credit_balance: nextBalance })
+      .eq("id", targetClient.id);
+    if (clientErr) {
+      toast.error("Anzahlung fehlgeschlagen (Kunde)", { description: clientErr.message });
+      setSavingPrepay(false);
+      return;
+    }
+
+    const customerLabel = [targetClient.customer_number, targetClient.name]
+      .filter(Boolean)
+      .join(" · ");
+    const baseNote = `Anzahlung von ${customerLabel || targetClient.name}. Auf Kundenguthaben gebucht.`;
+    const finalNote = prepayForm.note.trim()
+      ? `${baseNote}\n${prepayForm.note.trim()}`
+      : baseNote;
+
+    const { error: txErr } = await supabase.from("transactions").insert({
+      type: "income",
+      amount: amountParsed,
+      description: `Anzahlung – ${targetClient.name}`,
+      category: "Anzahlung",
+      date: dateStr,
+      notes: finalNote,
+      affects_bank_balance: prepayForm.affects_bank,
+      client_id: targetClient.id,
+    });
+    setSavingPrepay(false);
+    if (txErr) {
+      toast.error("Guthaben gebucht, Einnahme-Buchung fehlgeschlagen", {
+        description: txErr.message,
+      });
+    } else {
+      toast.success(
+        `Anzahlung ${formatCurrency(amountParsed)} gebucht · neues Guthaben ${formatCurrency(nextBalance)}`,
+      );
+    }
+    setPrepayDialogOpen(false);
+    loadClients();
   }
 
   async function handleDelete(id: string) {
@@ -221,16 +369,29 @@ function ClientsPage() {
             {clients.length} Kunden insgesamt
           </p>
         </div>
-        <Button
-          onClick={openNew}
-          className="bg-primary text-primary-foreground hover:bg-red-700 text-sm sm:text-base"
-          size="sm"
-          disabled={!canWrite}
-        >
-          <Plus className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
-          <span className="hidden sm:inline">Neuer Kunde</span>
-          <span className="sm:hidden">Neu</span>
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            onClick={() => openPrepayDialog()}
+            variant="outline"
+            size="sm"
+            disabled={!canWrite}
+            className="border-border/60 bg-muted/30 backdrop-blur-md text-sm sm:text-base"
+          >
+            <Wallet className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Anzahlung buchen</span>
+            <span className="sm:hidden">Anzahlung</span>
+          </Button>
+          <Button
+            onClick={openNew}
+            className="bg-primary text-primary-foreground hover:bg-red-700 text-sm sm:text-base"
+            size="sm"
+            disabled={!canWrite}
+          >
+            <Plus className="mr-1.5 sm:mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline">Neuer Kunde</span>
+            <span className="sm:hidden">Neu</span>
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -579,23 +740,64 @@ function ClientsPage() {
                 Bei Bau-Kunden können Sie ein Guthaben pflegen; es wird bei BAU-Rechnungen automatisch bis zur Höhe des Rechnungsbetrags angerechnet.
               </p>
             </div>
-            {form.client_type === "bau" && (
-              <div className="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-4">
-                <Label>Guthaben (EUR)</Label>
-                <Input
-                  value={form.credit_balance_input}
-                  onChange={(e) =>
-                    setForm({ ...form, credit_balance_input: e.target.value })
-                  }
-                  className="bg-secondary"
-                  placeholder="z.B. 1.500,00"
-                  inputMode="decimal"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Aktuelles verfügbares Guthaben dieses Kunden (manuell anpassbar).
-                </p>
-              </div>
-            )}
+            {form.client_type === "bau" && (() => {
+              const dirty = form.credit_balance_input !== originalCreditInput;
+              const isExisting = !!editClient?.id;
+              return (
+                <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/15 p-4 backdrop-blur-md">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <Label className="text-foreground">Guthaben (EUR)</Label>
+                    {isExisting && (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        Gespeichert:{" "}
+                        <span className="font-medium text-foreground">
+                          {formatCurrency(Math.max(0, parseGermanAmount(originalCreditInput) ?? 0))}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    value={form.credit_balance_input}
+                    onChange={(e) =>
+                      setForm({ ...form, credit_balance_input: e.target.value })
+                    }
+                    className="bg-secondary"
+                    placeholder="z.B. 1.500,00"
+                    inputMode="decimal"
+                  />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    {isExisting && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={saveCreditInline}
+                        disabled={!canWrite || savingCreditInline || !dirty}
+                        className="bg-primary text-primary-foreground hover:bg-red-700"
+                      >
+                        {savingCreditInline && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                        Guthaben jetzt speichern
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={resetCreditInput}
+                      disabled={!dirty}
+                      className="border-border/60"
+                    >
+                      <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                      Zurücksetzen
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-snug">
+                    Nur für manuelle Korrekturen. Echte Anzahlungen über{" "}
+                    <span className="font-medium text-foreground">„Anzahlung buchen"</span>{" "}
+                    erfassen — die werden zusätzlich als Einnahme gebucht.
+                  </p>
+                </div>
+              );
+            })()}
             <div className="space-y-2">
               <Label>Notizen</Label>
               <Textarea
@@ -617,6 +819,158 @@ function ClientsPage() {
             >
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editClient ? "Speichern" : "Erstellen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Anzahlung / Teilzahlung buchen Dialog */}
+      <Dialog open={prepayDialogOpen} onOpenChange={setPrepayDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto bg-card border-border sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Anzahlung / Teilzahlung buchen</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const bauClients = clients.filter((c) => c.client_type === "bau");
+            const selected = bauClients.find((c) => c.id === prepayForm.client_id) || null;
+            const amountParsed = parseGermanAmount(prepayForm.amount_input);
+            const amount = amountParsed && amountParsed > 0 ? amountParsed : 0;
+            const currentBalance = selected
+              ? Math.max(0, Number(selected.credit_balance ?? 0))
+              : 0;
+            const newBalance = currentBalance + amount;
+
+            return (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Kunde</Label>
+                  <Select
+                    value={prepayForm.client_id}
+                    onValueChange={(v) =>
+                      setPrepayForm({ ...prepayForm, client_id: v })
+                    }
+                  >
+                    <SelectTrigger className="bg-secondary">
+                      <SelectValue placeholder="Bau-Kunden auswählen…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bauClients.length === 0 ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          Keine Bau-Kunden vorhanden
+                        </div>
+                      ) : (
+                        bauClients.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.customer_number ? `${c.customer_number} · ` : ""}
+                            {c.name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {selected && (
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      Aktuelles Guthaben:{" "}
+                      <span className="font-medium text-foreground">
+                        {formatCurrency(currentBalance)}
+                      </span>
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Betrag (EUR)</Label>
+                    <Input
+                      value={prepayForm.amount_input}
+                      onChange={(e) =>
+                        setPrepayForm({ ...prepayForm, amount_input: e.target.value })
+                      }
+                      className="bg-secondary"
+                      placeholder="z.B. 25.000,00"
+                      inputMode="decimal"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Datum</Label>
+                    <Input
+                      type="date"
+                      value={prepayForm.date}
+                      onChange={(e) =>
+                        setPrepayForm({ ...prepayForm, date: e.target.value })
+                      }
+                      className="bg-secondary"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Notiz (optional)</Label>
+                  <Input
+                    value={prepayForm.note}
+                    onChange={(e) =>
+                      setPrepayForm({ ...prepayForm, note: e.target.value })
+                    }
+                    className="bg-secondary"
+                    placeholder="z.B. Anzahlung Baustelle Dietmar"
+                  />
+                </div>
+
+                <div className="flex items-start gap-3 rounded-xl border border-border/40 bg-muted/20 px-3.5 py-3 backdrop-blur-md">
+                  <Switch
+                    id="prepay-affects-bank"
+                    checked={prepayForm.affects_bank}
+                    onCheckedChange={(v) =>
+                      setPrepayForm({ ...prepayForm, affects_bank: v })
+                    }
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-0.5 min-w-0">
+                    <Label
+                      htmlFor="prepay-affects-bank"
+                      className="text-sm text-foreground cursor-pointer"
+                    >
+                      Auf Bankkonto eingegangen
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      An = echte Bankbewegung (zählt im Bank-Saldo). Aus = nur
+                      Verrechnung/Guthaben ohne Bankbewegung.
+                    </p>
+                  </div>
+                </div>
+
+                {selected && amount > 0 && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/[0.07] px-4 py-3 backdrop-blur-md space-y-1">
+                    <p className="text-xs text-muted-foreground">Vorschau</p>
+                    <p className="text-sm text-foreground tabular-nums">
+                      Guthaben {formatCurrency(currentBalance)} →{" "}
+                      <span className="font-semibold">{formatCurrency(newBalance)}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      + Einnahme {formatCurrency(amount)}{" "}
+                      {prepayForm.affects_bank ? "(Bank-Saldo)" : "(nur Guthaben-Verrechnung)"}
+                    </p>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground leading-snug">
+                  Beim Buchen wird der Betrag zum Kundenguthaben addiert UND als
+                  Einnahme (Kategorie „Anzahlung") in Einnahmen &amp; Ausgaben erfasst.
+                </p>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPrepayDialogOpen(false)}>
+              Abbrechen
+            </Button>
+            <Button
+              onClick={handlePrepaySave}
+              disabled={savingPrepay || !canWrite}
+              className="bg-primary text-primary-foreground hover:bg-red-700"
+            >
+              {savingPrepay && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Buchen
             </Button>
           </DialogFooter>
         </DialogContent>

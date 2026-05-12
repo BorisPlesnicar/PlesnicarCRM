@@ -50,6 +50,7 @@ import dynamic from "next/dynamic";
 import { format, addDays } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "@/app/app/AuthProvider";
+import { syncInvoiceIncomeTransaction, localDateYmd } from "@/lib/invoice-income-transaction";
 
 const InvoicePDF = dynamic(() => import("@/components/invoices/invoice-pdf"), {
   ssr: false,
@@ -141,8 +142,6 @@ export default function InvoiceDetailPage() {
     if (!canWrite || !invoice) return;
     setUpdatingStatus(true);
 
-    const paidDesc = `Rechnung ${invoice.invoice_number}`;
-
     try {
       const { error: invoiceError } = await supabase
         .from("invoices")
@@ -155,75 +154,37 @@ export default function InvoiceDetailPage() {
         return;
       }
 
-      if (invoice.status === "paid" && newStatus !== "paid") {
-        const { error: deleteError } = await supabase
-          .from("transactions")
-          .delete()
-          .eq("description", paidDesc)
-          .eq("type", "income");
-        if (deleteError) {
-          console.error("Error deleting transaction:", deleteError);
-        }
-      }
+      const merged = {
+        ...invoice,
+        status: newStatus as Invoice["status"],
+      };
 
-      if (newStatus === "paid") {
-        const { data: existingTransactions, error: checkError } = await supabase
-          .from("transactions")
-          .select("id")
-          .eq("description", paidDesc)
-          .eq("type", "income");
+      const becamePaid = invoice.status !== "paid" && newStatus === "paid";
+      const syncRes = await syncInvoiceIncomeTransaction(supabase, merged, {
+        bookingDate: becamePaid ? localDateYmd() : undefined,
+      });
 
-        if (checkError) {
-          console.error("Error checking existing transactions:", checkError);
-        }
-
-        if (!existingTransactions || existingTransactions.length === 0) {
-          const total = Number(invoice.total_amount ?? 0);
-          const creditApplied = Math.max(0, Number(invoice.credit_applied_amount ?? 0));
-          const cashReceived = amountDueAfterCredit(total, creditApplied);
-
-          if (cashReceived > 0) {
-            const noteBase = `Automatisch erstellt bei Bezahlung der Rechnung ${invoice.invoice_number}.`;
-            const noteCredit =
-              creditApplied > 0
-                ? ` Rechnungsbetrag ${formatCurrency(total)}, davon ${formatCurrency(creditApplied)} per Kundenguthaben angerechnet — als Einnahme gebucht: ${formatCurrency(cashReceived)} (Zahlbetrag). Keine separate Ausgabe für das Guthaben buchen.`
-                : "";
-
-            const { error: transactionError } = await supabase
-              .from("transactions")
-              .insert({
-                type: "income" as const,
-                amount: cashReceived,
-                description: paidDesc,
-                category: "Rechnung",
-                date: new Date().toISOString().split("T")[0],
-                notes: noteBase + noteCredit,
-                affects_bank_balance: true,
-              })
-              .select()
-              .single();
-
-            if (transactionError) {
-              console.error("Transaction creation error:", transactionError);
-              toast.error("Rechnung als bezahlt markiert, aber Transaktion konnte nicht erstellt werden", {
-                description: transactionError.message,
-              });
-            } else {
-              toast.success(
-                creditApplied > 0
-                  ? "Bezahlt markiert — Einnahme entspricht dem Zahlbetrag (nach Guthaben)"
-                  : "Rechnung als bezahlt markiert und Einnahme erstellt"
-              );
-            }
-          } else if (creditApplied > 0) {
-            toast.success(
-              "Rechnung als bezahlt markiert. Vollständig per Kundenguthaben beglichen — keine Einnahme-Transaktion (kein Geldeingang)."
-            );
-          } else {
-            toast.success("Rechnung als bezahlt markiert");
-          }
+      if (!syncRes.ok) {
+        console.error(syncRes.errorMessage);
+        toast.error("Status gespeichert, Buchhaltung konnte nicht angepasst werden", {
+          description: syncRes.errorMessage,
+        });
+      } else if (becamePaid) {
+        const total = Number(invoice.total_amount ?? 0);
+        const creditApplied = Math.max(0, Number(invoice.credit_applied_amount ?? 0));
+        const cashReceived = amountDueAfterCredit(total, creditApplied);
+        if (cashReceived > 0) {
+          toast.success(
+            creditApplied > 0
+              ? "Bezahlt markiert — Einnahme entspricht dem Zahlbetrag (nach Guthaben)"
+              : "Rechnung als bezahlt markiert und Einnahme erstellt"
+          );
+        } else if (creditApplied > 0) {
+          toast.success(
+            "Rechnung als bezahlt markiert. Vollständig per Kundenguthaben beglichen — keine Einnahme-Transaktion (kein Geldeingang)."
+          );
         } else {
-          toast.success("Status aktualisiert (Transaktion existiert bereits)");
+          toast.success("Rechnung als bezahlt markiert");
         }
       } else if (invoice.status === "paid" && newStatus !== "paid") {
         toast.success("Status aktualisiert — zugehörige Bank-Einnahme entfernt");

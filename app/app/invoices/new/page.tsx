@@ -75,6 +75,7 @@ export default function NewInvoicePage() {
   const [partialPaymentOfTotal, setPartialPaymentOfTotal] = useState("");
   const [invoiceType, setInvoiceType] = useState<"it" | "bau">("it");
   const [bauIntroText, setBauIntroText] = useState("");
+  const [applyBauCredit, setApplyBauCredit] = useState(false);
 
   // IT Items
   const [items, setItems] = useState<InvoiceItem[]>([
@@ -110,14 +111,16 @@ export default function NewInvoicePage() {
 
   const bauCreditAppliedPreview = useMemo(
     () =>
-      computeBauCreditApplied(
-        invoiceType,
-        selectedClient?.client_type,
-        Number(selectedClient?.credit_balance ?? 0),
-        calc.totalAmount,
-        0
-      ),
-    [invoiceType, selectedClient, calc.totalAmount]
+      applyBauCredit
+        ? computeBauCreditApplied(
+            invoiceType,
+            selectedClient?.client_type,
+            Number(selectedClient?.credit_balance ?? 0),
+            calc.totalAmount,
+            0
+          )
+        : 0,
+    [applyBauCredit, invoiceType, selectedClient, calc.totalAmount]
   );
 
   // Create draft invoice for preview
@@ -146,6 +149,7 @@ export default function NewInvoicePage() {
         : null,
       customer_number: customerNumber || null,
         invoice_type: invoiceType,
+        apply_bau_credit: invoiceType === "bau" ? applyBauCredit : false,
         intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
         net_amount: calc.netAmount,
       vat_amount: calc.vatAmount,
@@ -173,6 +177,7 @@ export default function NewInvoicePage() {
     customerNumber,
     invoiceType,
     bauIntroText,
+    applyBauCredit,
     calc,
     vatPercent,
     isPartialPayment,
@@ -411,13 +416,15 @@ export default function NewInvoicePage() {
       return;
     }
 
-    const creditApplied = computeBauCreditApplied(
-      invoiceType,
-      (clientRow.client_type as "it" | "bau") || "it",
-      Number(clientRow.credit_balance ?? 0),
-      calc.totalAmount,
-      0
-    );
+    const creditApplied = applyBauCredit
+      ? computeBauCreditApplied(
+          invoiceType,
+          (clientRow.client_type as "it" | "bau") || "it",
+          Number(clientRow.credit_balance ?? 0),
+          calc.totalAmount,
+          0
+        )
+      : 0;
 
     const dueDate = addDays(new Date(invoiceDate), paymentTermDays);
 
@@ -448,6 +455,7 @@ export default function NewInvoicePage() {
           : null,
         customer_number: customerNumber || null,
         invoice_type: invoiceType,
+        apply_bau_credit: invoiceType === "bau" ? applyBauCredit : false,
         intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
         net_amount: calc.netAmount,
         vat_amount: calc.vatAmount,
@@ -696,6 +704,22 @@ export default function NewInvoicePage() {
                 </div>
                 {selectedClient?.client_type === "bau" &&
                   invoiceType === "bau" &&
+                  (selectedClient.credit_balance ?? 0) > 0 && (
+                    <div className="sm:col-span-2 rounded-2xl border border-border/60 bg-muted/10 px-4 py-3 backdrop-blur-md">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground">Kundenguthaben anrechnen</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                            Standard ist aus: normale Rechnung → Bank-Einnahme. Nur aktivieren, wenn wirklich per Guthaben verrechnet wurde.
+                          </p>
+                        </div>
+                        <Switch checked={applyBauCredit} onCheckedChange={setApplyBauCredit} />
+                      </div>
+                    </div>
+                  )}
+                {selectedClient?.client_type === "bau" &&
+                  invoiceType === "bau" &&
+                  applyBauCredit &&
                   bauCreditAppliedPreview > 0 && (
                     <div className="sm:col-span-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm">
                       <p className="font-medium text-emerald-200">

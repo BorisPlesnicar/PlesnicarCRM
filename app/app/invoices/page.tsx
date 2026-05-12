@@ -59,7 +59,8 @@ export default function InvoicesPage() {
     const { data, error } = await supabase
       .from("invoices")
       .select("*, clients(name)")
-      .order("invoice_date", { ascending: false });
+      .order("invoice_date", { ascending: false })
+      .order("invoice_number", { ascending: false });
     if (error) {
       toast.error("Fehler beim Laden");
     } else {
@@ -83,6 +84,7 @@ export default function InvoicesPage() {
       .single();
     const applied = Number(inv?.credit_applied_amount ?? 0);
     const num = inv?.invoice_number?.trim();
+    await supabase.from("transactions").delete().eq("invoice_id", id).eq("type", "income");
     if (num) {
       await supabase.from("transactions").delete().eq("description", `Rechnung ${num}`).eq("type", "income");
     }

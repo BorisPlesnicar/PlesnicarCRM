@@ -151,6 +151,10 @@ export interface Transaction {
   notes: string | null;
   /** false = Guthaben-/Verrechnungsbuchung ohne Bankbewegung (nicht im Bank-Saldo) */
   affects_bank_balance?: boolean;
+  /** Automatische Einnahme aus bezahlter Rechnung (optional) */
+  invoice_id?: string | null;
+  /** Optionaler Kundenbezug (z. B. bei Anzahlungen), für korrekte Saldo-Berechnung */
+  client_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -174,6 +178,8 @@ export interface Invoice {
   balance_line_amount?: number | null;
   customer_number: string | null;
   invoice_type?: "it" | "bau";
+  /** BAU + Bau-Kunde: Guthaben automatisch anrechnen */
+  apply_bau_credit?: boolean;
   net_amount: number;
   vat_amount: number;
   total_amount: number;

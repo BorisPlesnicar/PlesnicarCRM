@@ -110,6 +110,7 @@ export default function TransactionsPage() {
   const [notes, setNotes] = useState("");
   const [affectsBankBalance, setAffectsBankBalance] = useState(true);
   const [crmCreditTotal, setCrmCreditTotal] = useState<number | null>(null);
+  const [crmCreditAlreadyInBank, setCrmCreditAlreadyInBank] = useState<number>(0);
   const [saldoIncludeCrmCredit, setSaldoIncludeCrmCredit] = useState(false);
 
   useEffect(() => {
@@ -136,15 +137,43 @@ export default function TransactionsPage() {
   }
 
   async function loadCrmCreditStand() {
-    const { data, error } = await supabase.from("clients").select("credit_balance, client_type");
-    if (error || !data) {
+    const [{ data: clientsData, error: clientsError }, { data: txData }] = await Promise.all([
+      supabase.from("clients").select("id, credit_balance, client_type"),
+      supabase
+        .from("transactions")
+        .select("client_id, amount, affects_bank_balance, category")
+        .eq("category", "Anzahlung")
+        .eq("affects_bank_balance", true),
+    ]);
+    if (clientsError || !clientsData) {
       setCrmCreditTotal(null);
+      setCrmCreditAlreadyInBank(0);
       return;
     }
-    const sum = data
-      .filter((c) => (c.client_type as string) === "bau")
-      .reduce((s, c) => s + Math.max(0, Number(c.credit_balance ?? 0)), 0);
-    setCrmCreditTotal(sum);
+    // Bank-relevante Anzahlungen je Kunde aufsummieren — diese Beträge stecken
+    // bereits im Bank-Saldo und dürfen beim CRM-Toggle nicht nochmal addiert werden.
+    const bankPrepayByClient = new Map<string, number>();
+    for (const t of txData ?? []) {
+      const cid = (t.client_id as string | null) ?? null;
+      if (!cid) continue;
+      const prev = bankPrepayByClient.get(cid) ?? 0;
+      bankPrepayByClient.set(cid, prev + Number(t.amount ?? 0));
+    }
+
+    let total = 0;
+    let overlap = 0;
+    for (const c of clientsData) {
+      if ((c.client_type as string) !== "bau") continue;
+      const balance = Math.max(0, Number(c.credit_balance ?? 0));
+      total += balance;
+      const bankPrepay = bankPrepayByClient.get(c.id as string) ?? 0;
+      // Nur so viel als Überlappung zählen, wie der Kunde aktuell wirklich noch
+      // an Guthaben hat (verhindert Übersubtraktion, wenn Guthaben schon
+      // teilweise auf Rechnungen angerechnet wurde).
+      overlap += Math.min(balance, bankPrepay);
+    }
+    setCrmCreditTotal(total);
+    setCrmCreditAlreadyInBank(overlap);
   }
 
   async function loadTransactions() {
@@ -310,11 +339,15 @@ export default function TransactionsPage() {
     [scopedForStats]
   );
 
+  const effectiveCrmCredit = useMemo(() => {
+    const crm = crmCreditTotal ?? 0;
+    return Math.max(0, crm - crmCreditAlreadyInBank);
+  }, [crmCreditTotal, crmCreditAlreadyInBank]);
+
   const saldoDisplayValue = useMemo(() => {
     if (!saldoIncludeCrmCredit) return statsBank.net;
-    const crm = crmCreditTotal ?? 0;
-    return statsBank.net + crm;
-  }, [statsBank.net, saldoIncludeCrmCredit, crmCreditTotal]);
+    return statsBank.net + effectiveCrmCredit;
+  }, [statsBank.net, saldoIncludeCrmCredit, effectiveCrmCredit]);
 
   const saldoDisplayLoading = saldoIncludeCrmCredit && loading && crmCreditTotal === null;
 
@@ -375,8 +408,9 @@ export default function TransactionsPage() {
           <h1 className="text-3xl font-bold text-foreground">Einnahmen & Ausgaben</h1>
           <p className="text-muted-foreground">Verwalten Sie Ihre Finanzen</p>
           <p className="text-sm text-muted-foreground max-w-xl">
-            Einnahmen und Ausgaben: Bank-Buchungen. Beim Saldo können Sie optional das Kundenguthaben aus den CRM-Profilen
-            (Bau-Kunden) dazurechnen — rein zur Orientierung, nicht Ihr Kontostand.
+            Einnahmen und Ausgaben (inkl. Anzahlungen) zählen direkt im Saldo. Mit dem Toggle „Kundenguthaben im
+            Saldo" wird zusätzlich nur der Teil des CRM-Guthabens addiert, der nicht schon als Bank-Anzahlung erfasst
+            wurde — so wird nichts doppelt gezählt.
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
@@ -572,9 +606,16 @@ export default function TransactionsPage() {
                 </div>
               )}
               {saldoIncludeCrmCredit && !saldoDisplayLoading && crmCreditTotal !== null && (
-                <p className="text-[11px] text-muted-foreground mt-2 leading-snug tabular-nums">
-                  Bank {formatCurrency(statsBank.net)} + Guthaben {formatCurrency(crmCreditTotal)}
-                </p>
+                <div className="text-[11px] text-muted-foreground mt-2 leading-snug tabular-nums space-y-0.5">
+                  <p>
+                    Bank {formatCurrency(statsBank.net)} + Guthaben {formatCurrency(effectiveCrmCredit)}
+                  </p>
+                  {crmCreditAlreadyInBank > 0 && (
+                    <p className="text-[10px] opacity-70">
+                      ({formatCurrency(crmCreditAlreadyInBank)} aus Anzahlungen sind bereits im Bank-Saldo enthalten)
+                    </p>
+                  )}
+                </div>
               )}
               <p className="text-[11px] text-muted-foreground mt-2 leading-snug">
                 {saldoIncludeCrmCredit
