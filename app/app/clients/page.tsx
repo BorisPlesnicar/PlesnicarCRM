@@ -195,7 +195,7 @@ function ClientsPage() {
       return;
     }
     const parsed = parseGermanAmount(form.credit_balance_input);
-    const next = Math.max(0, parsed ?? 0);
+    const next = parsed ?? 0;
     setSavingCreditInline(true);
     const { error } = await supabase
       .from("clients")
@@ -224,8 +224,7 @@ function ClientsPage() {
     }
     setSaving(true);
     const creditParsed = parseGermanAmount(form.credit_balance_input);
-    const credit =
-      form.client_type === "bau" ? Math.max(0, creditParsed ?? 0) : 0;
+    const credit = form.client_type === "bau" ? (creditParsed ?? 0) : 0;
 
     const payload = {
       name: form.name.trim(),
@@ -294,7 +293,7 @@ function ClientsPage() {
     const dateStr = prepayForm.date && prepayForm.date.length >= 10
       ? prepayForm.date.slice(0, 10)
       : todayISO();
-    const currentBalance = Math.max(0, Number(targetClient.credit_balance ?? 0));
+    const currentBalance = Number(targetClient.credit_balance ?? 0);
     const nextBalance = currentBalance + amountParsed;
 
     const { error: clientErr } = await supabase
@@ -492,8 +491,15 @@ function ClientsPage() {
                           >
                             Bau
                           </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {formatCurrency(client.credit_balance ?? 0)} Guth.
+                          <span
+                            className={`text-xs ${
+                              (client.credit_balance ?? 0) < 0
+                                ? "text-red-400"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            {formatCurrency(client.credit_balance ?? 0)}{" "}
+                            {(client.credit_balance ?? 0) < 0 ? "Schuld" : "Guth."}
                           </span>
                         </div>
                       ) : (
@@ -751,7 +757,7 @@ function ClientsPage() {
                       <span className="text-xs text-muted-foreground tabular-nums">
                         Gespeichert:{" "}
                         <span className="font-medium text-foreground">
-                          {formatCurrency(Math.max(0, parseGermanAmount(originalCreditInput) ?? 0))}
+                          {formatCurrency(parseGermanAmount(originalCreditInput) ?? 0)}
                         </span>
                       </span>
                     )}
@@ -762,7 +768,7 @@ function ClientsPage() {
                       setForm({ ...form, credit_balance_input: e.target.value })
                     }
                     className="bg-secondary"
-                    placeholder="z.B. 1.500,00"
+                    placeholder="z.B. 1.500,00 oder -500,00"
                     inputMode="decimal"
                   />
                   <div className="flex flex-col gap-2 sm:flex-row">
@@ -791,7 +797,8 @@ function ClientsPage() {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground leading-snug">
-                    Nur für manuelle Korrekturen. Echte Anzahlungen über{" "}
+                    Positiv = Guthaben, negativ = offene Schuld des Kunden. Nur für manuelle Korrekturen.
+                    Echte Anzahlungen über{" "}
                     <span className="font-medium text-foreground">„Anzahlung buchen"</span>{" "}
                     erfassen — die werden zusätzlich als Einnahme gebucht.
                   </p>
@@ -836,7 +843,7 @@ function ClientsPage() {
             const amountParsed = parseGermanAmount(prepayForm.amount_input);
             const amount = amountParsed && amountParsed > 0 ? amountParsed : 0;
             const currentBalance = selected
-              ? Math.max(0, Number(selected.credit_balance ?? 0))
+              ? Number(selected.credit_balance ?? 0)
               : 0;
             const newBalance = currentBalance + amount;
 

@@ -153,8 +153,11 @@ export default function DashboardPage() {
           .lte("date", format(monthEnd, "yyyy-MM-dd"));
 
         const revenue = (incomes || [])
-          .filter((t) => (t as { affects_bank_balance?: boolean }).affects_bank_balance !== false)
-          .reduce((sum, t) => sum + (t.amount || 0), 0);
+          .filter(
+            (t: { affects_bank_balance?: boolean }) =>
+              t.affects_bank_balance !== false,
+          )
+          .reduce((sum: number, t: { amount?: number }) => sum + (t.amount || 0), 0);
         revenueData.push({ month: monthKey, revenue });
       }
 
@@ -231,18 +234,22 @@ export default function DashboardPage() {
 
       // Revenue = Einnahmen mit Bankabgleich (ohne reine Guthaben-Buchungen)
       const revenueMonth = (incomes.data || [])
-        .filter((t) => (t as { affects_bank_balance?: boolean }).affects_bank_balance !== false)
-        .reduce((sum, t) => sum + (t.amount || 0), 0);
+        .filter(
+          (t: { affects_bank_balance?: boolean }) => t.affects_bank_balance !== false,
+        )
+        .reduce((sum: number, t: { amount?: number }) => sum + (t.amount || 0), 0);
       const hoursMonth =
         (timeEntries.data || []).reduce(
-          (sum, t) => sum + (t.duration_minutes || 0),
-          0
+          (sum: number, t: { duration_minutes?: number }) =>
+            sum + (t.duration_minutes || 0),
+          0,
         ) / 60;
 
       // Project status distribution
       const statusCounts: Record<string, number> = {};
-      (projectStatuses.data || []).forEach((p) => {
-        statusCounts[p.status] = (statusCounts[p.status] || 0) + 1;
+      (projectStatuses.data || []).forEach((p: { status?: string }) => {
+        const status = p.status ?? "unknown";
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
       });
       const projectStatusData = [
         {
@@ -279,14 +286,23 @@ export default function DashboardPage() {
       }));
 
       // Open invoices - get from the query result
-      const openInvoicesList = (openInvoicesRes.data || []).map((inv: any) => ({
-        id: inv.id,
-        invoice_number: inv.invoice_number,
-        total_amount: inv.total_amount,
-        due_date: inv.due_date,
-        client_name: (inv.clients as any)?.name || "–",
-        status: inv.status,
-      }));
+      const openInvoicesList = (openInvoicesRes.data || []).map(
+        (inv: {
+          id: string;
+          invoice_number: string;
+          total_amount: number;
+          due_date: string;
+          status: string;
+          clients?: { name?: string } | null;
+        }) => ({
+          id: inv.id,
+          invoice_number: inv.invoice_number,
+          total_amount: inv.total_amount,
+          due_date: inv.due_date,
+          client_name: inv.clients?.name || "–",
+          status: inv.status,
+        }),
+      );
 
       // Get upcoming deadlines
       const deadlines: Array<{ id: string; type: "offer" | "project"; title: string; date: string; status: string }> = [];
@@ -369,10 +385,12 @@ export default function DashboardPage() {
       setLoading(false);
 
       // Show notifications
-      const overdueInvoices = openInvoicesList.filter((inv) => {
-        const dueDate = new Date(inv.due_date);
-        return inv.status === "overdue" || dueDate < now;
-      });
+      const overdueInvoices = openInvoicesList.filter(
+        (inv: { due_date: string; status: string }) => {
+          const dueDate = new Date(inv.due_date);
+          return inv.status === "overdue" || dueDate < now;
+        },
+      );
 
       if (overdueInvoices.length > 0) {
         setTimeout(() => {

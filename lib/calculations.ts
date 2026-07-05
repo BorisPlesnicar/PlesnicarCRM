@@ -142,17 +142,23 @@ export function amountDueAfterCredit(
 }
 
 /**
- * Restliches Kundenguthaben nach Abzug der auf dieser Rechnung angewandten Guthaben-Anrechnung
- * (für PDF-Zeile „Ihr restliches Guthaben beträgt …“ bei BAU + Bau-Kunde).
+ * Saldo nach dieser Rechnung für die PDF-Zeile „Ihr restliches Guthaben beträgt …“.
+ * Positiv = verbleibendes Guthaben, negativ = offene Schuld (noch zu zahlender Betrag).
  * Bei Bearbeitung: DB-Guthaben enthält bereits den Abzug der gespeicherten Rechnung → vorherigen Abzug addieren.
  */
 export function balanceLineAmountAfterBauCredit(params: {
   clientCreditBalance: number;
   creditAppliedOnInvoice: number;
   creditPreviouslyAppliedOnSameInvoice: number;
+  invoiceTotal: number;
 }): number {
-  const c = Number(params.clientCreditBalance);
-  const applied = Number(params.creditAppliedOnInvoice);
-  const prev = Number(params.creditPreviouslyAppliedOnSameInvoice);
-  return Math.max(0, Math.round((c + prev - applied) * 100) / 100);
+  const creditAfterApplication =
+    Number(params.clientCreditBalance) +
+    Number(params.creditPreviouslyAppliedOnSameInvoice) -
+    Number(params.creditAppliedOnInvoice);
+  const amountDue = amountDueAfterCredit(
+    params.invoiceTotal,
+    params.creditAppliedOnInvoice,
+  );
+  return Math.round((creditAfterApplication - amountDue) * 100) / 100;
 }

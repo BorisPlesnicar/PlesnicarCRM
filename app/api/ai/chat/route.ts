@@ -3,10 +3,6 @@ import OpenAI from "openai";
 
 export const dynamic = "force-dynamic";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 const SYSTEM_PROMPT = `Du bist ein sehr geduldiger und einfühlsamer KI-Assistent für das Plesnicar CRM-System. 
 Du hilfst besonders älteren oder weniger technikaffinen Benutzern bei der Nutzung der App.
 
@@ -165,6 +161,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Call OpenAI API
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: messages,

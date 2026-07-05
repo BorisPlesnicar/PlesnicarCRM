@@ -151,11 +151,11 @@ function NewOfferPage() {
       let nextSuffix = 1;
       if (existingOffers && existingOffers.length > 0) {
         const suffixes = existingOffers
-          .map((off) => {
+          .map((off: { offer_number: string }) => {
             const match = off.offer_number.match(/BPA-2248-(\d+)/);
             return match ? parseInt(match[1], 10) : 0;
           })
-          .filter((n) => n > 0);
+          .filter((n: number) => n > 0);
         nextSuffix = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 2;
       } else {
         // If no offers exist, start at 02 (since 01 already exists)

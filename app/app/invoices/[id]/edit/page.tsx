@@ -133,6 +133,7 @@ export default function EditInvoicePage() {
               clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
               creditAppliedOnInvoice: bauCreditAppliedPreview,
               creditPreviouslyAppliedOnSameInvoice: initialCreditApplied,
+              invoiceTotal: calc.totalAmount,
             })
           : parseGermanAmount(balanceLineAmount)
         : null,
@@ -354,7 +355,7 @@ export default function EditInvoicePage() {
       .select("*")
       .eq("offer_id", offerId)
       .order("position")
-      .then(({ data }) => {
+      .then(({ data }: { data: OfferItem[] | null }) => {
         if (data?.length) {
           if (offer.offer_type === "bau") {
             setBauItems(offerItemsToBauFormRows(data as OfferItem[]));
@@ -458,6 +459,7 @@ export default function EditInvoicePage() {
                 clientCreditBalance: Number(clientRow.credit_balance ?? 0),
                 creditAppliedOnInvoice: newCredit,
                 creditPreviouslyAppliedOnSameInvoice: clientId === prevClientId ? prevApplied : 0,
+                invoiceTotal: calc.totalAmount,
               })
             : parseGermanAmount(balanceLineAmount)
           : null,
@@ -720,9 +722,18 @@ export default function EditInvoicePage() {
                 {selectedClient?.client_type === "bau" &&
                   invoiceType === "bau" &&
                   bauCreditAppliedPreview === 0 &&
-                  (selectedClient.credit_balance ?? 0) <= 0 && (
+                  (selectedClient.credit_balance ?? 0) === 0 && (
                     <p className="sm:col-span-2 text-xs text-muted-foreground">
                       Bau-Kunde ohne Guthaben – der volle Rechnungsbetrag ist fällig.
+                    </p>
+                  )}
+                {selectedClient?.client_type === "bau" &&
+                  invoiceType === "bau" &&
+                  bauCreditAppliedPreview === 0 &&
+                  (selectedClient.credit_balance ?? 0) < 0 && (
+                    <p className="sm:col-span-2 text-xs text-red-400">
+                      Offene Schuld: {formatCurrency(Math.abs(selectedClient.credit_balance ?? 0))} – der volle
+                      Rechnungsbetrag ist zusätzlich fällig.
                     </p>
                   )}
                 {selectedClient?.client_type === "bau" && invoiceType === "it" && (
@@ -797,15 +808,27 @@ export default function EditInvoicePage() {
                     (invoiceType === "bau" && selectedClient?.client_type === "bau" ? (
                       <div className="space-y-2 max-w-md rounded-lg border border-border/50 bg-background/40 px-3 py-2.5">
                         <p className="text-sm text-muted-foreground">
-                          Restliches Guthaben nach dieser Rechnung wird automatisch aus dem Kundenkonto
-                          berechnet (nach Abzug der Guthaben-Anrechnung).
+                          Saldo nach dieser Rechnung: positiv = Guthaben, negativ = offene Schuld
+                          (noch zu zahlender Betrag nach Guthaben-Anrechnung).
                         </p>
-                        <p className="text-lg font-medium tabular-nums tracking-tight">
+                        <p
+                          className={`text-lg font-medium tabular-nums tracking-tight ${
+                            balanceLineAmountAfterBauCredit({
+                              clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
+                              creditAppliedOnInvoice: bauCreditAppliedPreview,
+                              creditPreviouslyAppliedOnSameInvoice: initialCreditApplied,
+                              invoiceTotal: calc.totalAmount,
+                            }) < 0
+                              ? "text-red-400"
+                              : ""
+                          }`}
+                        >
                           {formatCurrency(
                             balanceLineAmountAfterBauCredit({
                               clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
                               creditAppliedOnInvoice: bauCreditAppliedPreview,
                               creditPreviouslyAppliedOnSameInvoice: initialCreditApplied,
+                              invoiceTotal: calc.totalAmount,
                             })
                           )}
                         </p>

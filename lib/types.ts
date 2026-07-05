@@ -18,7 +18,7 @@ export interface Client {
   customer_number: string | null;
   /** it = ohne Guthaben-Logik, bau = Guthaben pflegbar & Anrechnung auf BAU-Rechnungen */
   client_type?: "it" | "bau";
-  /** Verfügbares Guthaben EUR (nur Bau-Kunden) */
+  /** Guthaben EUR (positiv) oder offene Schuld (negativ, nur Bau-Kunden) */
   credit_balance?: number;
   created_at: string;
 }

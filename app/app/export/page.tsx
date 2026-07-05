@@ -131,8 +131,12 @@ export default function ExportPage() {
         const clientOfferAddons = offerAddons.filter((addon: { offer_id?: string }) => addon.offer_id && clientOfferIds.has(addon.offer_id));
         const clientInvoiceItems = invoiceItems.filter((item: { invoice_id?: string }) => item.invoice_id && clientInvoiceIds.has(item.invoice_id));
 
-        const normalInvoices = clientInvoices.filter((i) => !isMahnung(i));
-        const mahnungInvoices = clientInvoices.filter((i) => isMahnung(i));
+        const normalInvoices = clientInvoices.filter(
+          (i: { invoice_number?: string }) => !isMahnung(i),
+        );
+        const mahnungInvoices = clientInvoices.filter((i: { invoice_number?: string }) =>
+          isMahnung(i),
+        );
 
         const hasAnyPdf = clientOffers.length > 0 || normalInvoices.length > 0 || mahnungInvoices.length > 0;
         if (!hasAnyPdf) continue;

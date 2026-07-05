@@ -100,7 +100,7 @@ function NotesPage() {
       }
 
       // Get unique user IDs from notes
-      const userIds = [...new Set(notesData.map((note) => note.user_id))];
+      const userIds = [...new Set(notesData.map((note: Note) => note.user_id))];
       
       // Load profiles for all user IDs
       const { data: profilesData } = await supabase
@@ -110,11 +110,14 @@ function NotesPage() {
 
       // Create a map of user_id -> full_name
       const profileMap = new Map(
-        (profilesData || []).map((profile) => [profile.id, profile.full_name])
+        (profilesData || []).map((profile: { id: string; full_name: string | null }) => [
+          profile.id,
+          profile.full_name,
+        ]),
       );
 
       // Combine notes with author info
-      const notesWithAuthor = notesData.map((note) => ({
+      const notesWithAuthor = notesData.map((note: Note) => ({
         ...note,
         profiles: { 
           full_name: profileMap.get(note.user_id) || "Unbekannt" 

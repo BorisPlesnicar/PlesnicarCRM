@@ -144,6 +144,7 @@ export default function NewInvoicePage() {
               clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
               creditAppliedOnInvoice: bauCreditAppliedPreview,
               creditPreviouslyAppliedOnSameInvoice: 0,
+              invoiceTotal: calc.totalAmount,
             })
           : parseGermanAmount(balanceLineAmount)
         : null,
@@ -217,11 +218,11 @@ export default function NewInvoicePage() {
       let nextSuffix = 1;
       if (existingInvoices && existingInvoices.length > 0) {
         const suffixes = existingInvoices
-          .map((inv) => {
+          .map((inv: { invoice_number: string }) => {
             const match = inv.invoice_number.match(/BP-2248-(\d+)/);
             return match ? parseInt(match[1], 10) : 0;
           })
-          .filter((n) => n > 0);
+          .filter((n: number) => n > 0);
         nextSuffix = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 2;
       } else {
         // If no invoices exist, start at 02 (since 01 already exists)
@@ -368,7 +369,7 @@ export default function NewInvoicePage() {
       .select("*")
       .eq("offer_id", offerId)
       .order("position")
-      .then(({ data }) => {
+      .then(({ data }: { data: OfferItem[] | null }) => {
         if (data && data.length > 0) {
           if (offer.offer_type === "bau") {
             setBauItems(offerItemsToBauFormRows(data as OfferItem[]));
@@ -450,6 +451,7 @@ export default function NewInvoicePage() {
                 clientCreditBalance: Number(clientRow.credit_balance ?? 0),
                 creditAppliedOnInvoice: creditApplied,
                 creditPreviouslyAppliedOnSameInvoice: 0,
+                invoiceTotal: calc.totalAmount,
               })
             : parseGermanAmount(balanceLineAmount)
           : null,
@@ -734,9 +736,18 @@ export default function NewInvoicePage() {
                 {selectedClient?.client_type === "bau" &&
                   invoiceType === "bau" &&
                   bauCreditAppliedPreview === 0 &&
-                  (selectedClient.credit_balance ?? 0) <= 0 && (
+                  (selectedClient.credit_balance ?? 0) === 0 && (
                     <p className="sm:col-span-2 text-xs text-muted-foreground">
                       Bau-Kunde ohne Guthaben – der volle Rechnungsbetrag ist fällig.
+                    </p>
+                  )}
+                {selectedClient?.client_type === "bau" &&
+                  invoiceType === "bau" &&
+                  bauCreditAppliedPreview === 0 &&
+                  (selectedClient.credit_balance ?? 0) < 0 && (
+                    <p className="sm:col-span-2 text-xs text-red-400">
+                      Offene Schuld: {formatCurrency(Math.abs(selectedClient.credit_balance ?? 0))} – der volle
+                      Rechnungsbetrag ist zusätzlich fällig.
                     </p>
                   )}
                 {selectedClient?.client_type === "bau" && invoiceType === "it" && (
@@ -815,15 +826,27 @@ export default function NewInvoicePage() {
                     (invoiceType === "bau" && selectedClient?.client_type === "bau" ? (
                       <div className="space-y-2 max-w-md rounded-lg border border-border/50 bg-background/40 px-3 py-2.5">
                         <p className="text-sm text-muted-foreground">
-                          Restliches Guthaben nach dieser Rechnung wird automatisch aus dem Kundenkonto
-                          berechnet (nach Abzug der Guthaben-Anrechnung).
+                          Saldo nach dieser Rechnung: positiv = Guthaben, negativ = offene Schuld
+                          (noch zu zahlender Betrag nach Guthaben-Anrechnung).
                         </p>
-                        <p className="text-lg font-medium tabular-nums tracking-tight">
+                        <p
+                          className={`text-lg font-medium tabular-nums tracking-tight ${
+                            balanceLineAmountAfterBauCredit({
+                              clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
+                              creditAppliedOnInvoice: bauCreditAppliedPreview,
+                              creditPreviouslyAppliedOnSameInvoice: 0,
+                              invoiceTotal: calc.totalAmount,
+                            }) < 0
+                              ? "text-red-400"
+                              : ""
+                          }`}
+                        >
                           {formatCurrency(
                             balanceLineAmountAfterBauCredit({
                               clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
                               creditAppliedOnInvoice: bauCreditAppliedPreview,
                               creditPreviouslyAppliedOnSameInvoice: 0,
+                              invoiceTotal: calc.totalAmount,
                             })
                           )}
                         </p>

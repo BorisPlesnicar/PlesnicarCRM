@@ -201,13 +201,17 @@ export default function ClientDetailPage() {
               <DollarSign className="h-5 w-5 text-emerald-500 shrink-0" />
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Verfügbares Guthaben
+                  {(client.credit_balance ?? 0) < 0 ? "Offene Schuld" : "Kundenguthaben"}
                 </p>
-                <p className="text-xl font-semibold text-foreground">
+                <p
+                  className={`text-xl font-semibold ${
+                    (client.credit_balance ?? 0) < 0 ? "text-red-400" : "text-foreground"
+                  }`}
+                >
                   {formatCurrency(client.credit_balance ?? 0)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Wird bei BAU-Rechnungen automatisch bis zur Rechnungssumme abgezogen. Bearbeiten unter{" "}
+                  Positiv = Guthaben, negativ = Schuld. Wird bei BAU-Rechnungen bis zur Rechnungssumme angerechnet. Bearbeiten unter{" "}
                   <button
                     type="button"
                     className="text-primary underline-offset-2 hover:underline"
