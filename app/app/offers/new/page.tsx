@@ -95,7 +95,7 @@ function NewOfferPage() {
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
   const [maintenanceMonths, setMaintenanceMonths] = useState(12);
   const [maintenanceMonthly, setMaintenanceMonthly] = useState(49);
-  const [vatPercent, setVatPercent] = useState(0);
+  const [vatPercent, setVatPercent] = useState(20);
   const [addons, setAddons] = useState<
     Array<{ id: string; title: string; description: string; price: number }>
   >([]);
@@ -829,7 +829,6 @@ function NewOfferPage() {
                 onChange={(e) => setVatPercent(parseDecimal(e.target.value, 0))}
                 className="bg-secondary"
               />
-              <p className="text-xs text-muted-foreground">0 = Kleinunternehmer</p>
             </div>
           </div>
 

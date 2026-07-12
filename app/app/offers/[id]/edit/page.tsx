@@ -883,7 +883,6 @@ export default function EditOfferPage() {
                 onChange={(e) => setVatPercent(parseDecimal(e.target.value, 0))}
                 className="bg-secondary"
               />
-              <p className="text-xs text-muted-foreground">0 = Kleinunternehmer</p>
             </div>
           </div>
 

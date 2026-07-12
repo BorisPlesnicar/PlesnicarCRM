@@ -218,11 +218,6 @@ export default function FormularVorlagePage() {
           </div>
         </div>
 
-        {/* Kleinunternehmerhinweis */}
-        <p className="text-sm mt-3">
-          Kleinunternehmer gem. § 6 Abs 1 Z 27 UStG.
-        </p>
-
         {/* Bedingungen */}
         <div className="mt-3 text-sm">
           <span className="font-semibold">Bedingungen:</span>

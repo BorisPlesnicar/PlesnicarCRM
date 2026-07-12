@@ -162,3 +162,24 @@ export function balanceLineAmountAfterBauCredit(params: {
   );
   return Math.round((creditAfterApplication - amountDue) * 100) / 100;
 }
+
+/** Text und Anzeige-Betrag für die Guthaben-/Forderungszeile in der PDF. */
+export function balanceLineDisplay(balanceAmount: number): {
+  label: string;
+  amount: number;
+  isReceivable: boolean;
+} {
+  const n = Math.round(Number(balanceAmount) * 100) / 100;
+  if (n < 0) {
+    return {
+      label: "Offene Forderung beträgt:",
+      amount: Math.abs(n),
+      isReceivable: true,
+    };
+  }
+  return {
+    label: "Ihr restliches Guthaben beträgt:",
+    amount: n,
+    isReceivable: false,
+  };
+}

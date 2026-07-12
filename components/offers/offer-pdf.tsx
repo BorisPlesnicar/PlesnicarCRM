@@ -12,6 +12,7 @@ import {
 } from "@react-pdf/renderer";
 import { Offer, OfferItem, OfferAddon, Client } from "@/lib/types";
 import { OfferCalculation } from "@/lib/calculations";
+import { COMPANY_COURT_LOCATION, companyUidFooterText } from "@/lib/company-footer";
 import { Button } from "@/components/ui/button";
 import { Download, X, Loader2 } from "lucide-react";
 
@@ -342,7 +343,7 @@ function buildOfferTableRows(
       quantity: 1,
       unit: "Stk",
       unit_price: price,
-      vat_percent: 0,
+      vat_percent: vatPct,
       discount_percent: 0,
       total: price,
     });
@@ -354,7 +355,7 @@ function buildOfferTableRows(
       quantity: 1,
       unit: "–",
       unit_price: -calc.global_discount_eur,
-      vat_percent: 0,
+      vat_percent: vatPct,
       discount_percent: 0,
       total: -calc.global_discount_eur,
     });
@@ -365,7 +366,7 @@ function buildOfferTableRows(
       quantity: 1,
       unit: "–",
       unit_price: calc.express_surcharge_eur,
-      vat_percent: 0,
+      vat_percent: vatPct,
       discount_percent: 0,
       total: calc.express_surcharge_eur,
     });
@@ -376,7 +377,7 @@ function buildOfferTableRows(
       quantity: 1,
       unit: "–",
       unit_price: calc.hosting_total,
-      vat_percent: 0,
+      vat_percent: vatPct,
       discount_percent: 0,
       total: calc.hosting_total,
     });
@@ -387,7 +388,7 @@ function buildOfferTableRows(
       quantity: 1,
       unit: "–",
       unit_price: calc.maintenance_total,
-      vat_percent: 0,
+      vat_percent: vatPct,
       discount_percent: 0,
       total: calc.maintenance_total,
     });
@@ -509,10 +510,12 @@ export function OfferDocument({
               <Text style={s.totalLabel}>Nettobetrag:</Text>
               <Text style={s.totalValue}>{formatNumberDE(netAmount, 2)} €</Text>
             </View>
-            <View style={s.totalRow}>
-              <Text style={s.totalLabel}>Umsatzsteuer:</Text>
-              <Text style={s.totalValue}>{formatNumberDE(vatAmount, 2)} €</Text>
-            </View>
+            {(offer.vat_percent ?? 0) > 0 && (
+              <View style={s.totalRow}>
+                <Text style={s.totalLabel}>Umsatzsteuer ({offer.vat_percent}%):</Text>
+                <Text style={s.totalValue}>{formatNumberDE(vatAmount, 2)} €</Text>
+              </View>
+            )}
             <View style={[s.totalRow, { marginTop: 10, borderTopWidth: 2, borderTopColor: "#ddd", paddingTop: 10 }]}>
               <Text style={[s.totalLabel, { fontSize: 10.5, fontWeight: 700 }]}>Angebotsbetrag:</Text>
               <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(totalAmount, 2)} €</Text>
@@ -522,9 +525,6 @@ export function OfferDocument({
 
         {/* Hinweise – wie Rechnung */}
         <View style={s.legalSection}>
-          <Text style={s.legalNote}>
-            Hinweis: Kleinunternehmer gem. § 6 Abs. 1 Z 27 UStG
-          </Text>
           <Text style={s.legalNote}>
             Die gelieferten Waren bleiben bis zur vollständigen Begleichung des Gegenwertes uneingeschränktes Eigentum der Firma Plesnicar Solutions.
           </Text>
@@ -556,7 +556,9 @@ export function OfferDocument({
             </View>
             <View style={s.footerColumn}>
               <Text style={s.footerTitle}>Gerichtsstand</Text>
-              <Text style={s.footerText}>3500 Krems a.d. Donau</Text>
+              <Text style={s.footerText}>{COMPANY_COURT_LOCATION}</Text>
+              <Text style={[s.footerText, { marginTop: 4 }]}>UID-Nr.</Text>
+              <Text style={s.footerText}>{companyUidFooterText()}</Text>
             </View>
           </View>
         </View>

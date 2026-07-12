@@ -12,7 +12,8 @@ import {
 } from "@react-pdf/renderer";
 import QRCode from "qrcode";
 import { Invoice, InvoiceItem, Client } from "@/lib/types";
-import { amountDueAfterCredit } from "@/lib/calculations";
+import { amountDueAfterCredit, balanceLineDisplay } from "@/lib/calculations";
+import { COMPANY_COURT_LOCATION, companyUidFooterText } from "@/lib/company-footer";
 import { Button } from "@/components/ui/button";
 import { Download, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -454,6 +455,13 @@ export function InvoicePDFDocument({
     ? Math.round(totalAmount * (1 - invoice.skonto_percent! / 100) * 100) / 100
     : totalAmount;
   const totalWithSkontoAfterCredit = amountDueAfterCredit(totalWithSkonto, creditApplied);
+  const showBalanceLine =
+    invoice.show_balance_line === true &&
+    invoice.balance_line_amount != null &&
+    !Number.isNaN(Number(invoice.balance_line_amount));
+  const balanceLine = showBalanceLine
+    ? balanceLineDisplay(Number(invoice.balance_line_amount))
+    : null;
 
   return (
     <Document>
@@ -554,7 +562,9 @@ export function InvoicePDFDocument({
                 <Text style={[s.tableCell, s.colAnzahl]}>{formatNumberDE(item.quantity, 2)}</Text>
                 <Text style={[s.tableCell, s.colEinheit]}>{item.unit}</Text>
                 <Text style={[s.tableCell, s.colEinheitspreis]}>€ {formatNumberDE(item.unit_price, 2)}</Text>
-                <Text style={[s.tableCell, s.colUst]}>{item.vat_percent.toFixed(0)}%</Text>
+                <Text style={[s.tableCell, s.colUst]}>
+                  {(invoice.vat_percent ?? item.vat_percent ?? 0).toFixed(0)}%
+                </Text>
                 {showRabatt && (
                   <Text style={[s.tableCell, s.colRabatt]}>
                     {item.discount_percent > 0
@@ -583,10 +593,12 @@ export function InvoicePDFDocument({
               <Text style={s.totalLabel}>Nettobetrag:</Text>
               <Text style={s.totalValue}>{formatNumberDE(invoice.net_amount || 0, 2)} €</Text>
             </View>
-            <View style={s.totalRow}>
-              <Text style={s.totalLabel}>Umsatzsteuer:</Text>
-              <Text style={s.totalValue}>{formatNumberDE(invoice.vat_amount || 0, 2)} €</Text>
-            </View>
+            {(invoice.vat_percent ?? 0) > 0 && (
+              <View style={s.totalRow}>
+                <Text style={s.totalLabel}>Umsatzsteuer ({invoice.vat_percent}%):</Text>
+                <Text style={s.totalValue}>{formatNumberDE(invoice.vat_amount || 0, 2)} €</Text>
+              </View>
+            )}
             <View style={[s.totalRow, { marginTop: 10, borderTopWidth: 2, borderTopColor: "#ddd", paddingTop: 10 }]}>
               <Text style={[s.totalLabel, { fontSize: 10.5, fontWeight: 700 }]}>Rechnungsbetrag:</Text>
               <Text style={[s.totalValue, s.totalFinal]}>{formatNumberDE(invoice.total_amount || 0, 2)} €</Text>
@@ -600,14 +612,12 @@ export function InvoicePDFDocument({
           </View>
         </View>
 
-        {invoice.show_balance_line === true &&
-          invoice.balance_line_amount != null &&
-          !Number.isNaN(Number(invoice.balance_line_amount)) && (
+        {balanceLine && (
             <View style={{ width: "100%", alignItems: "flex-end" }}>
               <View style={s.balanceLineSection}>
-                <Text style={s.balanceLineText}>Ihr restliches Guthaben beträgt:</Text>
+                <Text style={s.balanceLineText}>{balanceLine.label}</Text>
                 <Text style={s.balanceLineAmount}>
-                  {formatNumberDE(Number(invoice.balance_line_amount), 2)} €
+                  {formatNumberDE(balanceLine.amount, 2)} €
                 </Text>
               </View>
             </View>
@@ -661,9 +671,6 @@ export function InvoicePDFDocument({
         {/* Hinweise unverändert im Fluss */}
         <View style={s.legalSection}>
           <Text style={s.legalNote}>
-            Hinweis: Kleinunternehmer gem. § 6 Abs. 1 Z 27 UStG
-          </Text>
-          <Text style={s.legalNote}>
             Die gelieferten Waren bleiben bis zur vollständigen Begleichung des Gegenwertes uneingeschränktes Eigentum der Firma Plesnicar Solutions.
           </Text>
         </View>
@@ -694,7 +701,9 @@ export function InvoicePDFDocument({
             </View>
             <View style={s.footerColumn}>
               <Text style={s.footerTitle}>Gerichtsstand</Text>
-              <Text style={s.footerText}>3500 Krems a.d. Donau</Text>
+              <Text style={s.footerText}>{COMPANY_COURT_LOCATION}</Text>
+              <Text style={[s.footerText, { marginTop: 4 }]}>UID-Nr.</Text>
+              <Text style={s.footerText}>{companyUidFooterText()}</Text>
             </View>
           </View>
         </View>

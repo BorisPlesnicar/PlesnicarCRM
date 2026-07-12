@@ -9,6 +9,7 @@ import {
   computeBauCreditApplied,
   amountDueAfterCredit,
   balanceLineAmountAfterBauCredit,
+  balanceLineDisplay,
 } from "@/lib/calculations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,7 +71,7 @@ export default function NewInvoicePage() {
   const [showBalanceLine, setShowBalanceLine] = useState(false);
   const [balanceLineAmount, setBalanceLineAmount] = useState("");
   const [customerNumber, setCustomerNumber] = useState("");
-  const [vatPercent, setVatPercent] = useState(0);
+  const [vatPercent, setVatPercent] = useState(20);
   const [isPartialPayment, setIsPartialPayment] = useState(false);
   const [partialPaymentOfTotal, setPartialPaymentOfTotal] = useState("");
   const [invoiceType, setInvoiceType] = useState<"it" | "bau">("it");
@@ -194,8 +195,8 @@ export default function NewInvoicePage() {
     if (invoiceType === "it") {
       return items.filter((item) => item.description.trim());
     }
-    return bauRowsToPreviewPdfItems(bauItems);
-  }, [items, bauItems, invoiceType]);
+    return bauRowsToPreviewPdfItems(bauItems, vatPercent);
+  }, [items, bauItems, invoiceType, vatPercent]);
 
   useEffect(() => {
     async function load() {
@@ -489,12 +490,12 @@ export default function NewInvoicePage() {
           quantity: item.quantity,
           unit: item.unit,
           unit_price: item.unit_price,
-          vat_percent: item.vat_percent,
+          vat_percent: vatPercent,
           discount_percent: item.discount_percent,
           total: item.total,
         }));
     } else {
-      const built = buildBauInvoiceItemRows(bauItems);
+      const built = buildBauInvoiceItemRows(bauItems, vatPercent);
       if (!built.some((r) => r.row_kind === "position")) {
         await supabase.from("invoices").delete().eq("id", invoice.id);
         toast.error("Mindestens eine gültige Leistungszeile erforderlich");
@@ -819,39 +820,44 @@ export default function NewInvoicePage() {
                       onCheckedChange={setShowBalanceLine}
                     />
                     <Label htmlFor="show-balance-line" className="font-normal cursor-pointer">
-                      Guthaben-Hinweis in PDF („Ihr restliches Guthaben beträgt …“)
+                      Guthaben-/Forderungs-Hinweis in PDF
                     </Label>
                   </div>
                   {showBalanceLine &&
                     (invoiceType === "bau" && selectedClient?.client_type === "bau" ? (
                       <div className="space-y-2 max-w-md rounded-lg border border-border/50 bg-background/40 px-3 py-2.5">
                         <p className="text-sm text-muted-foreground">
-                          Saldo nach dieser Rechnung: positiv = Guthaben, negativ = offene Schuld
-                          (noch zu zahlender Betrag nach Guthaben-Anrechnung).
+                          Saldo nach dieser Rechnung: positiv = Guthaben, negativ = offene Forderung.
                         </p>
-                        <p
-                          className={`text-lg font-medium tabular-nums tracking-tight ${
-                            balanceLineAmountAfterBauCredit({
-                              clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
-                              creditAppliedOnInvoice: bauCreditAppliedPreview,
-                              creditPreviouslyAppliedOnSameInvoice: 0,
-                              invoiceTotal: calc.totalAmount,
-                            }) < 0
-                              ? "text-red-400"
-                              : ""
-                          }`}
-                        >
-                          {formatCurrency(
-                            balanceLineAmountAfterBauCredit({
-                              clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
-                              creditAppliedOnInvoice: bauCreditAppliedPreview,
-                              creditPreviouslyAppliedOnSameInvoice: 0,
-                              invoiceTotal: calc.totalAmount,
-                            })
-                          )}
-                        </p>
+                        {(() => {
+                          const raw = balanceLineAmountAfterBauCredit({
+                            clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
+                            creditAppliedOnInvoice: bauCreditAppliedPreview,
+                            creditPreviouslyAppliedOnSameInvoice: 0,
+                            invoiceTotal: calc.totalAmount,
+                          });
+                          const balance = balanceLineDisplay(raw);
+                          return (
+                            <>
+                              <p
+                                className={`text-sm font-medium ${
+                                  balance.isReceivable ? "text-red-400" : "text-foreground"
+                                }`}
+                              >
+                                {balance.label}
+                              </p>
+                              <p
+                                className={`text-lg font-medium tabular-nums tracking-tight ${
+                                  balance.isReceivable ? "text-red-400" : ""
+                                }`}
+                              >
+                                {formatCurrency(balance.amount)}
+                              </p>
+                            </>
+                          );
+                        })()}
                         <p className="text-xs text-muted-foreground">
-                          Im PDF: „Ihr restliches Guthaben beträgt …“ mit diesem Betrag.
+                          Im PDF erscheint derselbe Text wie oben.
                         </p>
                       </div>
                     ) : (
@@ -865,9 +871,16 @@ export default function NewInvoicePage() {
                           value={balanceLineAmount}
                           onChange={(e) => setBalanceLineAmount(e.target.value)}
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Wird auf der Rechnung als: Ihr restliches Guthaben beträgt: [Betrag] €
-                        </p>
+                        {(() => {
+                          const parsed = parseGermanAmount(balanceLineAmount);
+                          if (parsed == null) return null;
+                          const balance = balanceLineDisplay(parsed);
+                          return (
+                            <p className="text-xs text-muted-foreground">
+                              Im PDF: {balance.label} {formatCurrency(balance.amount)}
+                            </p>
+                          );
+                        })()}
                       </div>
                     ))}
                 </div>

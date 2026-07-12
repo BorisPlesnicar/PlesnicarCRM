@@ -59,7 +59,7 @@ export function bauRowsHaveBillablePosition(rows: BauFormRow[]): boolean {
 }
 
 /** Vorschau/PDF: Reihenfolge inkl. Abschnittstexten (leere Blöcke ausgelassen). */
-export function bauRowsToPreviewPdfItems(rows: BauFormRow[]): InvoiceItem[] {
+export function bauRowsToPreviewPdfItems(rows: BauFormRow[], vatPercent = 0): InvoiceItem[] {
   const out: InvoiceItem[] = [];
   let pos = 0;
   for (const row of rows) {
@@ -88,7 +88,7 @@ export function bauRowsToPreviewPdfItems(rows: BauFormRow[]): InvoiceItem[] {
         quantity: row.quantity,
         unit: row.unit,
         unit_price: row.price,
-        vat_percent: 0,
+        vat_percent: vatPercent,
         discount_percent: disc,
         total: bauLineTotal(row.quantity, row.price, disc),
         row_kind: "position",
@@ -100,7 +100,8 @@ export function bauRowsToPreviewPdfItems(rows: BauFormRow[]): InvoiceItem[] {
 
 /** DB insert payload (ohne invoice_id). */
 export function buildBauInvoiceItemRows(
-  rows: BauFormRow[]
+  rows: BauFormRow[],
+  vatPercent = 0
 ): Array<{
   position: number;
   row_kind: "position" | "text_block";
@@ -151,7 +152,7 @@ export function buildBauInvoiceItemRows(
         quantity: row.quantity,
         unit: row.unit,
         unit_price: row.price,
-        vat_percent: 0,
+        vat_percent: vatPercent,
         discount_percent: disc,
         total: bauLineTotal(row.quantity, row.price, disc),
       });

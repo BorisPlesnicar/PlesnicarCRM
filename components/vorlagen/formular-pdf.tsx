@@ -127,8 +127,6 @@ export function FormularPDFDocument({ logoUrl }: FormularPDFProps) {
           </View>
         </View>
 
-        <Text style={{ marginTop: 10 }}>Kleinunternehmer gem. § 6 Abs 1 Z 27 UStG.</Text>
-
         <View style={{ marginTop: 8 }}>
           <Text style={s.bold}>Bedingungen:</Text>
           <View style={[s.line, { marginTop: 4, height: 18 }]} />

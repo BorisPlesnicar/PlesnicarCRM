@@ -8,6 +8,7 @@ import {
   Image,
   StyleSheet,
 } from "@react-pdf/renderer";
+import { COMPANY_COURT_LOCATION, companyUidFooterText } from "@/lib/company-footer";
 
 const RED = "#DC2626";
 const BORDER = "#1a1a1a";
@@ -398,7 +399,9 @@ export function KundenanlagePDFDocument({ logoUrl }: KundenanlagePDFProps) {
             </View>
             <View style={s.footerCol}>
               <Text style={s.footerTitle}>Gerichtsstand</Text>
-              <Text style={s.footerText}>3500 Krems a.d. Donau</Text>
+              <Text style={s.footerText}>{COMPANY_COURT_LOCATION}</Text>
+              <Text style={[s.footerText, { marginTop: 4 }]}>UID-Nr.</Text>
+              <Text style={s.footerText}>{companyUidFooterText()}</Text>
             </View>
           </View>
         </View>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Invoice, InvoiceItem, Client, INVOICE_STATUSES } from "@/lib/types";
-import { formatCurrency, amountDueAfterCredit } from "@/lib/calculations";
+import { formatCurrency, amountDueAfterCredit, balanceLineDisplay } from "@/lib/calculations";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -259,6 +259,13 @@ export default function InvoiceDetailPage() {
 
   if (!invoice) return null;
 
+  const balanceLine =
+    invoice.show_balance_line === true &&
+    invoice.balance_line_amount != null &&
+    Number.isFinite(Number(invoice.balance_line_amount))
+      ? balanceLineDisplay(Number(invoice.balance_line_amount))
+      : null;
+
   return (
     <div className="space-y-6 pb-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -423,7 +430,9 @@ export default function InvoiceDetailPage() {
                     <TableCell className="text-right">{item.quantity.toFixed(2)}</TableCell>
                     <TableCell className="text-center">{item.unit}</TableCell>
                     <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
-                    <TableCell className="text-center">{item.vat_percent}%</TableCell>
+                    <TableCell className="text-center">
+                      {invoice.vat_percent ?? item.vat_percent ?? 0}%
+                    </TableCell>
                     <TableCell className="text-right">
                       {item.discount_percent > 0 ? `${item.discount_percent}%` : "–"}
                     </TableCell>
@@ -472,13 +481,11 @@ export default function InvoiceDetailPage() {
                 </span>
               </div>
             )}
-            {invoice.show_balance_line === true &&
-              invoice.balance_line_amount != null &&
-              Number.isFinite(Number(invoice.balance_line_amount)) && (
+            {balanceLine && (
                 <div className="mt-4 rounded-2xl border border-red-500/25 border-l-4 border-l-primary bg-primary/5 px-4 py-3 backdrop-blur-sm">
-                  <p className="text-sm font-semibold text-foreground">Ihr restliches Guthaben beträgt:</p>
+                  <p className="text-sm font-semibold text-foreground">{balanceLine.label}</p>
                   <p className="mt-1 text-xl font-bold tabular-nums tracking-tight text-primary">
-                    {formatCurrency(Number(invoice.balance_line_amount))}
+                    {formatCurrency(balanceLine.amount)}
                   </p>
                 </div>
               )}
