@@ -85,6 +85,8 @@ export interface OfferItem {
   unit?: string | null;
   /** BAU: Einheitspreis netto; IT: Stundensatz */
   unit_price?: number | null;
+  /** freier Abschnittstext zwischen Positionen (wie invoice_items.row_kind) */
+  row_kind?: "position" | "text_block";
 }
 
 export interface OfferAddon {

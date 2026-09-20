@@ -23,16 +23,27 @@ export function bauLineTotal(quantity: number, unitPrice: number, discountPercen
   return quantity * unitPrice * (1 - d / 100);
 }
 
-export function defaultBauPositionRow(id: string): BauFormRowPosition {
+export function defaultBauPositionRow(id: string, unit = "Stk"): BauFormRowPosition {
   return {
     id,
     kind: "position",
     description: "",
     quantity: 1,
-    unit: "Stk",
+    unit,
     price: 0,
     discount_percent: 0,
   };
+}
+
+export function defaultTextBlockRow(id: string): BauFormRowText {
+  return { id, kind: "text_block", text: "" };
+}
+
+/** Eindeutige Row-ID (Date.now kollidiert bei schnellen Klicks). */
+let rowIdCounter = 0;
+export function nextRowId(): string {
+  rowIdCounter += 1;
+  return `row-${Date.now().toString(36)}-${rowIdCounter}`;
 }
 
 /** Nur Leistungszeilen für Netto-/Summenberechnung. */

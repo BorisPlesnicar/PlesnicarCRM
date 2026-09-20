@@ -509,8 +509,8 @@ export function InvoicePDFDocument({
           <Text style={s.recipientAddress}>{client?.address || ""}</Text>
         </View>
 
-        {/* BAU: Text oberhalb der Leistungen */}
-        {invoice.invoice_type === "bau" && invoice.intro_text && invoice.intro_text.trim() && (
+        {/* Text oberhalb der Leistungen (IT + BAU) */}
+        {invoice.intro_text && invoice.intro_text.trim() && (
           <View style={{ marginBottom: 14 }}>
             <Text style={{ fontSize: 9, lineHeight: 1.5, color: "#333" }}>
               {invoice.intro_text.trim()}
@@ -530,10 +530,9 @@ export function InvoicePDFDocument({
             {showRabatt && <Text style={[s.tableHeaderText, s.colRabatt]}>Rabatt</Text>}
             <Text style={[s.tableHeaderText, showRabatt ? s.colGesamt : s.colGesamtNoRabatt]}>Gesamt</Text>
           </View>
-          {/* Rows (BAU: optional Abschnittstext-Zeilen wie Einleitung) */}
+          {/* Rows (optional Abschnittstext-Zeilen wie Einleitung) */}
           {items.map((item, index) => {
-            const isTextBlock =
-              invoice.invoice_type === "bau" && item.row_kind === "text_block";
+            const isTextBlock = item.row_kind === "text_block";
             if (isTextBlock) {
               const lines = item.description.split(/\r?\n/);
               return (

@@ -395,6 +395,20 @@ export default function InvoiceDetailPage() {
         </Card>
       </div>
 
+      {/* Einleitungstext oberhalb der Leistungen (wie in der PDF) */}
+      {invoice.intro_text?.trim() && (
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="text-base">Text oberhalb der Leistungen</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm whitespace-pre-wrap text-foreground">
+              {invoice.intro_text.trim()}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Items */}
       <Card className="border-border bg-card overflow-hidden">
         <CardHeader>
@@ -416,7 +430,7 @@ export default function InvoiceDetailPage() {
             </TableHeader>
             <TableBody>
               {items.map((item) =>
-                invoice.invoice_type === "bau" && item.row_kind === "text_block" ? (
+                item.row_kind === "text_block" ? (
                   <TableRow key={item.id} className="border-border bg-orange-500/5">
                     <TableCell colSpan={8} className="py-3">
                       <p className="text-xs font-medium text-orange-400/90 mb-1">Abschnittstext</p>

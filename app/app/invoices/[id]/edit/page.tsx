@@ -11,9 +11,10 @@ import {
   buildBauInvoiceItemRows,
   defaultBauPositionRow,
   invoiceItemsToBauFormRows,
-  bauLineTotal,
+  nextRowId,
 } from "@/lib/bau-invoice-rows";
-import { offerItemsToBauFormRows, offerItemsToItInvoiceItems } from "@/lib/bau-offer-rows";
+import { offerItemsToFormRows } from "@/lib/bau-offer-rows";
+import { DocumentLineEditor, IntroTextCard } from "@/components/documents/document-line-editor";
 import {
   formatCurrency,
   parseGermanAmount,
@@ -28,7 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -39,7 +40,7 @@ import {
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/app/app/AuthProvider";
-import { Loader2, ArrowLeft, Save, Plus, Trash2, Calculator, Eye, AlignLeft } from "lucide-react";
+import { Loader2, ArrowLeft, Save, Eye } from "lucide-react";
 import { addDays, format } from "date-fns";
 import dynamic from "next/dynamic";
 
@@ -77,25 +78,20 @@ export default function EditInvoicePage() {
   const [isPartialPayment, setIsPartialPayment] = useState(false);
   const [partialPaymentOfTotal, setPartialPaymentOfTotal] = useState("");
   const [invoiceType, setInvoiceType] = useState<"it" | "bau">("it");
-  const [bauIntroText, setBauIntroText] = useState("");
+  const [introText, setIntroText] = useState("");
   const [applyBauCredit, setApplyBauCredit] = useState(false);
   /** Beim Laden der Rechnung gesetztes Guthaben – für Neuberechnung bei Bearbeitung */
   const [initialCreditApplied, setInitialCreditApplied] = useState(0);
 
-  const [items, setItems] = useState<InvoiceItem[]>([
-    { position: 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 },
-  ]);
-  const [bauItems, setBauItems] = useState<BauFormRow[]>([defaultBauPositionRow("1")]);
+  const [rows, setRows] = useState<BauFormRow[]>([defaultBauPositionRow(nextRowId())]);
 
-  const bauItemsAsInvoiceItems = useMemo(() => bauRowsToCalcLineItems(bauItems), [bauItems]);
+  const calcLineItems = useMemo(() => bauRowsToCalcLineItems(rows), [rows]);
 
   const calc = useMemo(() => {
-    const itemsToUse = invoiceType === "it" ? items : bauItemsAsInvoiceItems;
-    const netAmount = itemsToUse.reduce((sum, item) => sum + item.total, 0);
+    const netAmount = calcLineItems.reduce((sum, item) => sum + item.total, 0);
     const vatAmount = netAmount * (vatPercent / 100);
-    const totalAmount = netAmount + vatAmount;
-    return { netAmount, vatAmount, totalAmount };
-  }, [items, bauItemsAsInvoiceItems, invoiceType, vatPercent]);
+    return { netAmount, vatAmount, totalAmount: netAmount + vatAmount };
+  }, [calcLineItems, vatPercent]);
 
   const selectedClient = useMemo(
     () => clients.find((c) => c.id === clientId) ?? null,
@@ -140,14 +136,15 @@ export default function EditInvoicePage() {
         : null,
       customer_number: customerNumber || null,
       invoice_type: invoiceType,
-      intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
+      intro_text: introText.trim() || null,
       net_amount: calc.netAmount,
       vat_amount: calc.vatAmount,
       total_amount: calc.totalAmount,
       credit_applied_amount: bauCreditAppliedPreview,
       vat_percent: vatPercent,
       is_partial_payment: isPartialPayment,
-      partial_payment_of_total: isPartialPayment && partialPaymentOfTotal ? parseFloat(partialPaymentOfTotal) : null,
+      partial_payment_of_total:
+        isPartialPayment && partialPaymentOfTotal ? parseFloat(partialPaymentOfTotal) : null,
       status: "draft",
       currency: "EUR",
       client_id: clientId,
@@ -167,7 +164,7 @@ export default function EditInvoicePage() {
     balanceLineAmount,
     customerNumber,
     invoiceType,
-    bauIntroText,
+    introText,
     calc,
     vatPercent,
     isPartialPayment,
@@ -179,12 +176,10 @@ export default function EditInvoicePage() {
     initialCreditApplied,
   ]);
 
-  const previewItems = useMemo(() => {
-    if (invoiceType === "it") {
-      return items.filter((item) => item.description.trim());
-    }
-    return bauRowsToPreviewPdfItems(bauItems, vatPercent);
-  }, [items, bauItems, invoiceType, vatPercent]);
+  const previewItems = useMemo(
+    () => bauRowsToPreviewPdfItems(rows, vatPercent),
+    [rows, vatPercent]
+  );
 
   useEffect(() => {
     async function load() {
@@ -193,7 +188,11 @@ export default function EditInvoicePage() {
         supabase.from("invoice_items").select("*").eq("invoice_id", invoiceId).order("position"),
         supabase.from("clients").select("*").order("name"),
         supabase.from("projects").select("*").order("title"),
-        supabase.from("offers").select("*").eq("status", "accepted").order("created_at", { ascending: false }),
+        supabase
+          .from("offers")
+          .select("*")
+          .eq("status", "accepted")
+          .order("created_at", { ascending: false }),
       ]);
 
       if (invoiceRes.error || !invoiceRes.data) {
@@ -227,35 +226,20 @@ export default function EditInvoicePage() {
       setCustomerNumber(inv.customer_number || "");
       setVatPercent(inv.vat_percent ?? 0);
       setIsPartialPayment(inv.is_partial_payment ?? false);
-      setPartialPaymentOfTotal(inv.partial_payment_of_total != null ? String(inv.partial_payment_of_total) : "");
+      setPartialPaymentOfTotal(
+        inv.partial_payment_of_total != null ? String(inv.partial_payment_of_total) : ""
+      );
       setInvoiceType((inv.invoice_type as "it" | "bau") || "it");
-      setBauIntroText(inv.intro_text || "");
+      setIntroText(inv.intro_text || "");
       setApplyBauCredit(inv.apply_bau_credit === true);
       setInitialCreditApplied(Number(inv.credit_applied_amount ?? 0));
 
       const loadedItems = (itemsRes.data || []) as InvoiceItem[];
-      if (inv.invoice_type === "bau") {
-        setBauItems(
-          loadedItems.length > 0 ? invoiceItemsToBauFormRows(loadedItems) : [defaultBauPositionRow("1")]
-        );
-        setItems([{ position: 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 }]);
-      } else {
-        setItems(
-          loadedItems.length > 0
-            ? loadedItems.map((it) => ({
-                position: it.position,
-                description: it.description,
-                quantity: it.quantity,
-                unit: it.unit,
-                unit_price: it.unit_price,
-                vat_percent: it.vat_percent,
-                discount_percent: it.discount_percent,
-                total: it.total,
-              }))
-            : [{ position: 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 }]
-        );
-        setBauItems([defaultBauPositionRow("1")]);
-      }
+      setRows(
+        loadedItems.length > 0
+          ? invoiceItemsToBauFormRows(loadedItems)
+          : [defaultBauPositionRow(nextRowId())]
+      );
       setLoading(false);
     }
     load();
@@ -268,89 +252,12 @@ export default function EditInvoicePage() {
     }
   }, [clientId, clients]);
 
-  function updateItem(index: number, field: keyof InvoiceItem, value: number | string) {
-    setItems((prev) =>
-      prev.map((item, i) => {
-        if (i !== index) return item;
-        const updated = { ...item, [field]: value };
-        const quantity = typeof updated.quantity === "number" ? updated.quantity : parseFloat(String(updated.quantity)) || 0;
-        const unitPrice = typeof updated.unit_price === "number" ? updated.unit_price : parseFloat(String(updated.unit_price)) || 0;
-        const discount = typeof updated.discount_percent === "number" ? updated.discount_percent : parseFloat(String(updated.discount_percent)) || 0;
-        updated.total = quantity * unitPrice * (1 - discount / 100);
-        return updated;
-      })
-    );
-  }
-
-  function addItem() {
-    setItems((prev) => [
-      ...prev,
-      { position: prev.length + 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 },
-    ]);
-  }
-
-  function insertItem(index: number) {
-    setItems((prev) => {
-      const blank = { position: index + 1, description: "", quantity: 1, unit: "Stk", unit_price: 0, vat_percent: 0, discount_percent: 0, total: 0 };
-      return [...prev.slice(0, index), blank, ...prev.slice(index)].map((item, i) => ({ ...item, position: i + 1 }));
-    });
-  }
-
-  function removeItem(index: number) {
-    setItems((prev) => prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, position: i + 1 })));
-  }
-
-  function addBauItem() {
-    setBauItems((prev) => [...prev, defaultBauPositionRow(Date.now().toString())]);
-  }
-
-  function addBauTextBlock() {
-    setBauItems((prev) => [...prev, { id: Date.now().toString(), kind: "text_block", text: "" }]);
-  }
-
-  function insertBauItem(index: number) {
-    setBauItems((prev) => [
-      ...prev.slice(0, index),
-      defaultBauPositionRow(Date.now().toString()),
-      ...prev.slice(index),
-    ]);
-  }
-
-  function insertBauTextBlock(index: number) {
-    setBauItems((prev) => [
-      ...prev.slice(0, index),
-      { id: Date.now().toString(), kind: "text_block", text: "" },
-      ...prev.slice(index),
-    ]);
-  }
-
-  function removeBauItem(id: string) {
-    setBauItems((prev) => prev.filter((item) => item.id !== id));
-  }
-
-  function updateBauItem(
-    id: string,
-    field: "description" | "quantity" | "unit" | "price" | "discount_percent",
-    value: string | number
-  ) {
-    setBauItems((prev) =>
-      prev.map((item) =>
-        item.id === id && item.kind === "position" ? { ...item, [field]: value } : item
-      )
-    );
-  }
-
-  function updateBauTextBlock(id: string, text: string) {
-    setBauItems((prev) =>
-      prev.map((item) => (item.id === id && item.kind === "text_block" ? { ...item, text } : item))
-    );
-  }
-
   function loadFromOffer() {
     if (!offerId || offerId === "none") return;
     const offer = offers.find((o) => o.id === offerId);
     if (!offer) return;
-    if (offer.offer_type) setInvoiceType(offer.offer_type);
+    const offerType = (offer.offer_type as "it" | "bau") || "it";
+    setInvoiceType(offerType);
     supabase
       .from("offer_items")
       .select("*")
@@ -358,12 +265,11 @@ export default function EditInvoicePage() {
       .order("position")
       .then(({ data }: { data: OfferItem[] | null }) => {
         if (data?.length) {
-          if (offer.offer_type === "bau") {
-            setBauItems(offerItemsToBauFormRows(data as OfferItem[]));
-          } else {
-            setItems(offerItemsToItInvoiceItems(data as OfferItem[], offer.vat_percent || 0));
-          }
+          setRows(offerItemsToFormRows(data as OfferItem[], offerType));
           setVatPercent(offer.vat_percent || 0);
+          if (offer.project_scope_short?.trim()) {
+            setIntroText(offer.project_scope_short.trim());
+          }
           toast.success("Positionen vom Angebot übernommen");
         }
       });
@@ -374,16 +280,9 @@ export default function EditInvoicePage() {
       toast.error("Bitte wählen Sie einen Kunden");
       return;
     }
-    if (invoiceType === "it") {
-      if (items.length === 0 || items.every((i) => !i.description.trim())) {
-        toast.error("Bitte fügen Sie mindestens eine Position hinzu");
-        return;
-      }
-    } else {
-      if (!bauRowsHaveBillablePosition(bauItems)) {
-        toast.error("Bitte fügen Sie mindestens eine Position mit Beschreibung und Preis hinzu");
-        return;
-      }
+    if (!bauRowsHaveBillablePosition(rows)) {
+      toast.error("Bitte fügen Sie mindestens eine Position mit Beschreibung und Preis hinzu");
+      return;
     }
 
     setSaving(true);
@@ -459,7 +358,8 @@ export default function EditInvoicePage() {
             ? balanceLineAmountAfterBauCredit({
                 clientCreditBalance: Number(clientRow.credit_balance ?? 0),
                 creditAppliedOnInvoice: newCredit,
-                creditPreviouslyAppliedOnSameInvoice: clientId === prevClientId ? prevApplied : 0,
+                creditPreviouslyAppliedOnSameInvoice:
+                  clientId === prevClientId ? prevApplied : 0,
                 invoiceTotal: calc.totalAmount,
               })
             : parseGermanAmount(balanceLineAmount)
@@ -467,14 +367,15 @@ export default function EditInvoicePage() {
         customer_number: customerNumber || null,
         invoice_type: invoiceType,
         apply_bau_credit: invoiceType === "bau" ? applyBauCredit : false,
-        intro_text: invoiceType === "bau" ? (bauIntroText?.trim() || null) : null,
+        intro_text: introText.trim() || null,
         net_amount: calc.netAmount,
         vat_amount: calc.vatAmount,
         total_amount: calc.totalAmount,
         credit_applied_amount: newCredit,
         vat_percent: vatPercent,
         is_partial_payment: isPartialPayment,
-        partial_payment_of_total: isPartialPayment && partialPaymentOfTotal ? parseFloat(partialPaymentOfTotal) : null,
+        partial_payment_of_total:
+          isPartialPayment && partialPaymentOfTotal ? parseFloat(partialPaymentOfTotal) : null,
       })
       .eq("id", invoiceId);
 
@@ -484,43 +385,22 @@ export default function EditInvoicePage() {
       return;
     }
 
-    await supabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
-
-    let itemsToInsert: Record<string, unknown>[] = [];
-    if (invoiceType === "it") {
-      itemsToInsert = items
-        .filter((item) => item.description.trim())
-        .map((item) => ({
-          invoice_id: invoiceId,
-          position: item.position,
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-          unit_price: item.unit_price,
-          vat_percent: vatPercent,
-          discount_percent: item.discount_percent,
-          total: item.total,
-        }));
-    } else {
-      const built = buildBauInvoiceItemRows(bauItems, vatPercent);
-      if (!built.some((r) => r.row_kind === "position")) {
-        toast.error("Mindestens eine gültige Leistungszeile erforderlich");
-        setSaving(false);
-        return;
-      }
-      itemsToInsert = built.map((row) => ({
-        invoice_id: invoiceId,
-        ...row,
-      }));
+    const built = buildBauInvoiceItemRows(rows, vatPercent);
+    if (!built.some((r) => r.row_kind === "position")) {
+      toast.error("Mindestens eine gültige Leistungszeile erforderlich");
+      setSaving(false);
+      return;
     }
 
-    if (itemsToInsert.length > 0) {
-      const { error: itemsError } = await supabase.from("invoice_items").insert(itemsToInsert);
-      if (itemsError) {
-        toast.error("Fehler bei Positionen", { description: itemsError.message });
-        setSaving(false);
-        return;
-      }
+    await supabase.from("invoice_items").delete().eq("invoice_id", invoiceId);
+
+    const { error: itemsError } = await supabase
+      .from("invoice_items")
+      .insert(built.map((row) => ({ invoice_id: invoiceId, ...row })));
+    if (itemsError) {
+      toast.error("Fehler bei Positionen", { description: itemsError.message });
+      setSaving(false);
+      return;
     }
 
     if (clientId === prevClientId) {
@@ -576,12 +456,18 @@ export default function EditInvoicePage() {
     router.push(`/app/invoices/${invoiceId}`);
   }
 
-  const filteredProjects = projectId ? projects : clientId ? projects.filter((p) => p.client_id === clientId) : projects;
-  const filteredOffers = offerId ? offers : clientId ? offers.filter((o) => o.client_id === clientId) : offers;
+  const filteredProjects = projectId
+    ? projects
+    : clientId
+      ? projects.filter((p) => p.client_id === clientId)
+      : projects;
+  const filteredOffers = offerId
+    ? offers
+    : clientId
+      ? offers.filter((o) => o.client_id === clientId)
+      : offers;
 
-  const canPreviewPdf =
-    !!clientId &&
-    (invoiceType === "it" ? previewItems.length > 0 : bauRowsHaveBillablePosition(bauItems));
+  const canPreviewPdf = !!clientId && bauRowsHaveBillablePosition(rows);
 
   if (loading || authLoading) {
     return (
@@ -598,7 +484,7 @@ export default function EditInvoicePage() {
 
   return (
     <div className="space-y-6 pb-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" onClick={() => router.push(`/app/invoices/${invoiceId}`)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -607,23 +493,40 @@ export default function EditInvoicePage() {
           <h1 className="text-2xl font-bold text-foreground">Rechnung bearbeiten</h1>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" disabled={!canPreviewPdf} onClick={() => setShowPreview(true)}>
+          <Button
+            variant="outline"
+            className="rounded-xl"
+            disabled={!canPreviewPdf}
+            onClick={() => setShowPreview(true)}
+          >
             <Eye className="mr-2 h-4 w-4" />
             Vorschau
           </Button>
-          <Button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground hover:bg-red-700">
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-primary text-primary-foreground hover:bg-red-700 rounded-xl"
+          >
+            {saving ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
             {saving ? "Speichere..." : "Speichern"}
           </Button>
         </div>
       </div>
 
-      <Card className="border-border bg-card">
+      <Card className="border-border/60 bg-card/60 backdrop-blur-xl rounded-2xl">
         <CardContent className="pt-6">
           <Tabs value={invoiceType} onValueChange={(v) => setInvoiceType(v as "it" | "bau")}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="it">IT Rechnung</TabsTrigger>
-              <TabsTrigger value="bau">BAU Rechnung</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 rounded-xl">
+              <TabsTrigger value="it" className="rounded-lg">
+                IT Rechnung
+              </TabsTrigger>
+              <TabsTrigger value="bau" className="rounded-lg">
+                BAU Rechnung
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </CardContent>
@@ -631,7 +534,7 @@ export default function EditInvoicePage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
-          <Card className="border-border bg-card">
+          <Card className="border-border/60 bg-card/60 backdrop-blur-xl rounded-2xl">
             <CardHeader>
               <CardTitle>Rechnungsinformationen</CardTitle>
             </CardHeader>
@@ -685,72 +588,108 @@ export default function EditInvoicePage() {
                       </SelectContent>
                     </Select>
                     {offerId && offerId !== "none" && (
-                      <Button variant="outline" onClick={loadFromOffer}>
+                      <Button variant="outline" className="rounded-xl" onClick={loadFromOffer}>
                         Übernehmen
                       </Button>
                     )}
                   </div>
                 </div>
-                {selectedClient?.client_type === "bau" &&
-                  invoiceType === "bau" &&
-                  (selectedClient.credit_balance ?? 0) > 0 && (
-                    <div className="sm:col-span-2 rounded-2xl border border-border/60 bg-muted/10 px-4 py-3 backdrop-blur-md">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground">Kundenguthaben anrechnen</p>
-                          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
-                            Standard ist aus: normale Rechnung → Bank-Einnahme. Nur aktivieren, wenn wirklich per Guthaben verrechnet wurde.
-                          </p>
-                        </div>
-                        <Switch checked={applyBauCredit} onCheckedChange={setApplyBauCredit} />
-                      </div>
-                    </div>
-                  )}
-                {selectedClient?.client_type === "bau" &&
-                  invoiceType === "bau" &&
-                  applyBauCredit &&
-                  bauCreditAppliedPreview > 0 && (
-                    <div className="sm:col-span-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm">
-                      <p className="font-medium text-emerald-200">
-                        Kundenguthaben wird angerechnet: {formatCurrency(bauCreditAppliedPreview)}
-                      </p>
-                      <p className="text-muted-foreground mt-1">
-                        Verfügbar: {formatCurrency(selectedClient.credit_balance ?? 0)} · Zu zahlen:{" "}
-                        {formatCurrency(amountDueAfterCredit(calc.totalAmount, bauCreditAppliedPreview))}
-                      </p>
-                    </div>
-                  )}
-                {selectedClient?.client_type === "bau" &&
-                  invoiceType === "bau" &&
-                  bauCreditAppliedPreview === 0 &&
-                  (selectedClient.credit_balance ?? 0) === 0 && (
-                    <p className="sm:col-span-2 text-xs text-muted-foreground">
-                      Bau-Kunde ohne Guthaben – der volle Rechnungsbetrag ist fällig.
-                    </p>
-                  )}
-                {selectedClient?.client_type === "bau" &&
-                  invoiceType === "bau" &&
-                  bauCreditAppliedPreview === 0 &&
-                  (selectedClient.credit_balance ?? 0) < 0 && (
-                    <p className="sm:col-span-2 text-xs text-red-400">
-                      Offene Schuld: {formatCurrency(Math.abs(selectedClient.credit_balance ?? 0))} – der volle
-                      Rechnungsbetrag ist zusätzlich fällig.
-                    </p>
-                  )}
-                {selectedClient?.client_type === "bau" && invoiceType === "it" && (
-                  <p className="sm:col-span-2 text-xs text-muted-foreground">
-                    Kundenguthaben wird nur bei <strong className="text-foreground">BAU-Rechnungen</strong> automatisch
-                    angerechnet.
-                  </p>
-                )}
                 <div className="space-y-2">
                   <Label>Rechnungsnummer</Label>
-                  <Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+                  <Input
+                    value={invoiceNumber}
+                    onChange={(e) => setInvoiceNumber(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Rechnungsdatum</Label>
-                  <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                  />
                 </div>
+                <div className="space-y-2">
+                  <Label>Kundennummer (optional)</Label>
+                  <Input
+                    value={customerNumber}
+                    onChange={(e) => setCustomerNumber(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {selectedClient?.client_type === "bau" &&
+                invoiceType === "bau" &&
+                (selectedClient.credit_balance ?? 0) > 0 && (
+                  <div className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-3 backdrop-blur-md">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">
+                          Kundenguthaben anrechnen
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                          Standard ist aus: normale Rechnung → Bank-Einnahme. Nur aktivieren, wenn
+                          wirklich per Guthaben verrechnet wurde.
+                        </p>
+                      </div>
+                      <Switch checked={applyBauCredit} onCheckedChange={setApplyBauCredit} />
+                    </div>
+                  </div>
+                )}
+              {selectedClient?.client_type === "bau" &&
+                invoiceType === "bau" &&
+                applyBauCredit &&
+                bauCreditAppliedPreview > 0 && (
+                  <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm backdrop-blur-md">
+                    <p className="font-medium text-emerald-200">
+                      Kundenguthaben wird angerechnet: {formatCurrency(bauCreditAppliedPreview)}
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      Verfügbar: {formatCurrency(selectedClient.credit_balance ?? 0)} · Zu zahlen:{" "}
+                      {formatCurrency(amountDueAfterCredit(calc.totalAmount, bauCreditAppliedPreview))}
+                    </p>
+                  </div>
+                )}
+              {selectedClient?.client_type === "bau" &&
+                invoiceType === "bau" &&
+                bauCreditAppliedPreview === 0 &&
+                (selectedClient.credit_balance ?? 0) === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Bau-Kunde ohne Guthaben – der volle Rechnungsbetrag ist fällig.
+                  </p>
+                )}
+              {selectedClient?.client_type === "bau" &&
+                invoiceType === "bau" &&
+                bauCreditAppliedPreview === 0 &&
+                (selectedClient.credit_balance ?? 0) < 0 && (
+                  <p className="text-xs text-red-400">
+                    Offene Schuld: {formatCurrency(Math.abs(selectedClient.credit_balance ?? 0))} –
+                    der volle Rechnungsbetrag ist zusätzlich fällig.
+                  </p>
+                )}
+              {selectedClient?.client_type === "bau" && invoiceType === "it" && (
+                <p className="text-xs text-muted-foreground">
+                  Kundenguthaben wird nur bei{" "}
+                  <strong className="text-foreground">BAU-Rechnungen</strong> automatisch
+                  angerechnet.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <IntroTextCard
+            value={introText}
+            onChange={setIntroText}
+            hint="Optionaler Einleitungstext, der auf der Rechnung über der Positionstabelle erscheint."
+          />
+          <DocumentLineEditor rows={rows} onRowsChange={setRows} />
+
+          <Card className="border-border/60 bg-card/60 backdrop-blur-xl rounded-2xl">
+            <CardHeader>
+              <CardTitle>Zahlung & PDF-Optionen</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Zahlungsziel mit Skonto (Tage)</Label>
                   <Input
@@ -758,7 +697,11 @@ export default function EditInvoicePage() {
                     min={0}
                     placeholder="z.B. 10 (leer = kein Skonto)"
                     value={skontoDays ?? ""}
-                    onChange={(e) => setSkontoDays(e.target.value === "" ? null : parseInt(e.target.value, 10) || null)}
+                    onChange={(e) =>
+                      setSkontoDays(
+                        e.target.value === "" ? null : parseInt(e.target.value, 10) || null
+                      )
+                    }
                   />
                 </div>
                 <div className="space-y-2">
@@ -769,7 +712,11 @@ export default function EditInvoicePage() {
                     step={0.01}
                     placeholder="z.B. 3 (leer = kein Skonto)"
                     value={skontoPercent ?? ""}
-                    onChange={(e) => setSkontoPercent(e.target.value === "" ? null : parseFloat(e.target.value) || null)}
+                    onChange={(e) =>
+                      setSkontoPercent(
+                        e.target.value === "" ? null : parseFloat(e.target.value) || null
+                      )
+                    }
                   />
                 </div>
                 <div className="space-y-2">
@@ -780,348 +727,97 @@ export default function EditInvoicePage() {
                     onChange={(e) => setPaymentTermDays(parseInt(e.target.value) || 14)}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Kundennummer (optional)</Label>
-                  <Input value={customerNumber} onChange={(e) => setCustomerNumber(e.target.value)} />
-                </div>
-                <div className="flex items-center space-x-2 sm:col-span-2">
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="show-discount"
+                  checked={showDiscountColumn}
+                  onCheckedChange={setShowDiscountColumn}
+                />
+                <Label htmlFor="show-discount" className="font-normal cursor-pointer">
+                  Rabattspalte in PDF anzeigen
+                </Label>
+              </div>
+
+              <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 backdrop-blur-md">
+                <div className="flex items-center space-x-2">
                   <Switch
-                    id="show-discount"
-                    checked={showDiscountColumn}
-                    onCheckedChange={setShowDiscountColumn}
+                    id="show-balance-line-edit"
+                    checked={showBalanceLine}
+                    onCheckedChange={setShowBalanceLine}
                   />
-                  <Label htmlFor="show-discount" className="font-normal cursor-pointer">
-                    Rabattspalte in PDF anzeigen
+                  <Label htmlFor="show-balance-line-edit" className="font-normal cursor-pointer">
+                    Guthaben-/Forderungs-Hinweis in PDF
                   </Label>
                 </div>
-                <div className="flex flex-col gap-3 sm:col-span-2 rounded-xl border border-border/60 bg-muted/20 p-4">
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="show-balance-line-edit"
-                      checked={showBalanceLine}
-                      onCheckedChange={setShowBalanceLine}
-                    />
-                    <Label htmlFor="show-balance-line-edit" className="font-normal cursor-pointer">
-                      Guthaben-/Forderungs-Hinweis in PDF
-                    </Label>
-                  </div>
-                  {showBalanceLine &&
-                    (invoiceType === "bau" && selectedClient?.client_type === "bau" ? (
-                      <div className="space-y-2 max-w-md rounded-lg border border-border/50 bg-background/40 px-3 py-2.5">
-                        <p className="text-sm text-muted-foreground">
-                          Saldo nach dieser Rechnung: positiv = Guthaben, negativ = offene Forderung.
-                        </p>
-                        {(() => {
-                          const raw = balanceLineAmountAfterBauCredit({
-                            clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
-                            creditAppliedOnInvoice: bauCreditAppliedPreview,
-                            creditPreviouslyAppliedOnSameInvoice: initialCreditApplied,
-                            invoiceTotal: calc.totalAmount,
-                          });
-                          const balance = balanceLineDisplay(raw);
-                          return (
-                            <>
-                              <p
-                                className={`text-sm font-medium ${
-                                  balance.isReceivable ? "text-red-400" : "text-foreground"
-                                }`}
-                              >
-                                {balance.label}
-                              </p>
-                              <p
-                                className={`text-lg font-medium tabular-nums tracking-tight ${
-                                  balance.isReceivable ? "text-red-400" : ""
-                                }`}
-                              >
-                                {formatCurrency(balance.amount)}
-                              </p>
-                            </>
-                          );
-                        })()}
-                        <p className="text-xs text-muted-foreground">
-                          Im PDF erscheint derselbe Text wie oben.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2 max-w-xs">
-                        <Label htmlFor="balance-line-amount-edit">Betrag (EUR)</Label>
-                        <Input
-                          id="balance-line-amount-edit"
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="z.B. 1250,50"
-                          value={balanceLineAmount}
-                          onChange={(e) => setBalanceLineAmount(e.target.value)}
-                        />
-                        {(() => {
-                          const parsed = parseGermanAmount(balanceLineAmount);
-                          if (parsed == null) return null;
-                          const balance = balanceLineDisplay(parsed);
-                          return (
-                            <p className="text-xs text-muted-foreground">
-                              Im PDF: {balance.label} {formatCurrency(balance.amount)}
+                {showBalanceLine &&
+                  (invoiceType === "bau" && selectedClient?.client_type === "bau" ? (
+                    <div className="space-y-2 max-w-md rounded-xl border border-border/50 bg-background/40 px-3 py-2.5 backdrop-blur-sm">
+                      <p className="text-sm text-muted-foreground">
+                        Saldo nach dieser Rechnung: positiv = Guthaben, negativ = offene Forderung.
+                      </p>
+                      {(() => {
+                        const raw = balanceLineAmountAfterBauCredit({
+                          clientCreditBalance: Number(selectedClient?.credit_balance ?? 0),
+                          creditAppliedOnInvoice: bauCreditAppliedPreview,
+                          creditPreviouslyAppliedOnSameInvoice: initialCreditApplied,
+                          invoiceTotal: calc.totalAmount,
+                        });
+                        const balance = balanceLineDisplay(raw);
+                        return (
+                          <>
+                            <p
+                              className={`text-sm font-medium ${
+                                balance.isReceivable ? "text-red-400" : "text-foreground"
+                              }`}
+                            >
+                              {balance.label}
                             </p>
-                          );
-                        })()}
-                      </div>
-                    ))}
-                </div>
+                            <p
+                              className={`text-lg font-medium tabular-nums tracking-tight ${
+                                balance.isReceivable ? "text-red-400" : ""
+                              }`}
+                            >
+                              {formatCurrency(balance.amount)}
+                            </p>
+                          </>
+                        );
+                      })()}
+                      <p className="text-xs text-muted-foreground">
+                        Im PDF erscheint derselbe Text wie oben.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-w-xs">
+                      <Label htmlFor="balance-line-amount-edit">Betrag (EUR)</Label>
+                      <Input
+                        id="balance-line-amount-edit"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="z.B. 1250,50"
+                        value={balanceLineAmount}
+                        onChange={(e) => setBalanceLineAmount(e.target.value)}
+                      />
+                      {(() => {
+                        const parsed = parseGermanAmount(balanceLineAmount);
+                        if (parsed == null) return null;
+                        const balance = balanceLineDisplay(parsed);
+                        return (
+                          <p className="text-xs text-muted-foreground">
+                            Im PDF: {balance.label} {formatCurrency(balance.amount)}
+                          </p>
+                        );
+                      })()}
+                    </div>
+                  ))}
               </div>
             </CardContent>
           </Card>
-
-          <Tabs value={invoiceType} onValueChange={(v) => setInvoiceType(v as "it" | "bau")}>
-            <TabsContent value="it" className="space-y-0">
-              <Card className="border-border bg-card">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Calculator className="h-5 w-5" />
-                    Positionen
-                  </CardTitle>
-                  <Button variant="outline" size="sm" onClick={addItem}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Position hinzufügen
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {items.map((item, index) => (
-                    <div key={index} className="grid gap-4 sm:grid-cols-8 items-end p-4 border border-border rounded-lg">
-                      <div className="sm:col-span-3 space-y-2">
-                        <Label>Bezeichnung</Label>
-                        <Input
-                          value={item.description}
-                          onChange={(e) => updateItem(index, "description", e.target.value)}
-                          placeholder="z.B. Grafische Entwerfung einer Website"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Anzahl</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(index, "quantity", parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Einheit</Label>
-                        <Input value={item.unit} onChange={(e) => updateItem(index, "unit", e.target.value)} placeholder="Stk" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Einheitspreis</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.unit_price}
-                          onChange={(e) => updateItem(index, "unit_price", parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Rabatt %</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.discount_percent}
-                          onChange={(e) => updateItem(index, "discount_percent", parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Gesamt</Label>
-                        <div className="font-semibold">{formatCurrency(item.total)}</div>
-                      </div>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => insertItem(index)} title="Zeile darüber einfügen">
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} className="text-red-400" title="Zeile löschen">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="bau" className="space-y-0">
-              <Card className="border-border bg-card mb-4">
-                <CardHeader>
-                  <CardTitle className="text-base">Text oberhalb der Leistungen</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Optionaler Einleitungstext, der auf der BAU-Rechnung über der Positionstabelle erscheint.
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <textarea
-                    value={bauIntroText}
-                    onChange={(e) => setBauIntroText(e.target.value)}
-                    placeholder="z.B. Leistungen gemäß Auftrag vom … / Beschreibung des Bauvorhabens …"
-                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    rows={3}
-                  />
-                </CardContent>
-              </Card>
-              <Card className="border-border bg-card">
-                <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Calculator className="h-5 w-5" />
-                      Leistungen
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1 font-normal">
-                      Zwischen Positionen „Abschnittstext“ einfügen – gleiche Darstellung wie der Text oberhalb der
-                      Tabelle in der PDF.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" onClick={addBauItem} className="bg-primary text-primary-foreground hover:bg-red-700">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Position
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={addBauTextBlock}>
-                      <AlignLeft className="mr-2 h-4 w-4" />
-                      Abschnittstext
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {bauItems.map((item, idx) => {
-                      const positionOrdinal =
-                        item.kind === "position"
-                          ? bauItems.slice(0, idx).filter((r) => r.kind === "position").length + 1
-                          : 0;
-                      return item.kind === "text_block" ? (
-                        <div
-                          key={item.id}
-                          className="flex gap-3 items-start p-3 rounded-xl border border-orange-500/25 bg-orange-500/5"
-                        >
-                          <div className="flex-shrink-0 pt-2 w-8 flex justify-center">
-                            <AlignLeft className="h-4 w-4 text-orange-400/80 shrink-0" />
-                          </div>
-                          <div className="flex-1 space-y-2">
-                            <Label className="text-xs text-muted-foreground">Abschnittstext (PDF)</Label>
-                            <textarea
-                              value={item.text}
-                              onChange={(e) => updateBauTextBlock(item.id, e.target.value)}
-                              placeholder="z. B. Zweiter Auftrag – Dachgeschoss …"
-                              rows={3}
-                              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1 flex-shrink-0">
-                            <Button size="icon" variant="ghost" onClick={() => insertBauItem(idx)} title="Position darüber">
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="ghost" onClick={() => insertBauTextBlock(idx)} title="Abschnitt darüber">
-                              <AlignLeft className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => removeBauItem(item.id)}
-                              className="text-destructive hover:text-destructive"
-                              disabled={bauItems.length === 1}
-                              title="Entfernen"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div key={item.id} className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50">
-                          <div className="flex-shrink-0 pt-2 text-sm text-muted-foreground w-8">{positionOrdinal}.</div>
-                          <div className="flex-1 space-y-2">
-                            <Input
-                              placeholder="Leistungsbeschreibung..."
-                              value={item.description}
-                              onChange={(e) => updateBauItem(item.id, "description", e.target.value)}
-                              className="bg-background"
-                            />
-                            <div className="flex gap-2 items-center flex-wrap">
-                              <Input
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                placeholder="Anzahl"
-                                value={item.quantity || ""}
-                                onChange={(e) => updateBauItem(item.id, "quantity", parseFloat(e.target.value) || 1)}
-                                className="bg-background w-24"
-                              />
-                              <Input
-                                placeholder="Einheit"
-                                value={item.unit}
-                                onChange={(e) => updateBauItem(item.id, "unit", e.target.value)}
-                                className="bg-background w-24"
-                              />
-                              <Input
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                placeholder="Preis (€)"
-                                value={item.price || ""}
-                                onChange={(e) => updateBauItem(item.id, "price", parseFloat(e.target.value) || 0)}
-                                className="bg-background w-32"
-                              />
-                              <Input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step="0.01"
-                                placeholder="Rabatt %"
-                                title="Rabatt in Prozent (optional)"
-                                value={item.discount_percent || ""}
-                                onChange={(e) =>
-                                  updateBauItem(
-                                    item.id,
-                                    "discount_percent",
-                                    parseFloat(e.target.value) || 0
-                                  )
-                                }
-                                className="bg-background w-24"
-                              />
-                              <span className="text-sm text-muted-foreground">
-                                ={" "}
-                                {formatCurrency(
-                                  bauLineTotal(
-                                    item.quantity || 1,
-                                    item.price || 0,
-                                    item.discount_percent ?? 0
-                                  )
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-1 flex-shrink-0">
-                            <Button size="icon" variant="ghost" onClick={() => insertBauItem(idx)} title="Position darüber">
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                            <Button size="icon" variant="ghost" onClick={() => insertBauTextBlock(idx)} title="Abschnitt darüber">
-                              <AlignLeft className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => removeBauItem(item.id)}
-                              className="text-destructive hover:text-destructive"
-                              disabled={bauItems.length === 1}
-                              title="Zeile löschen"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
         </div>
 
         <div className="space-y-6">
-          <Card className="border-border bg-card">
+          <Card className="border-border/60 bg-card/60 backdrop-blur-xl rounded-2xl lg:sticky lg:top-6">
             <CardHeader>
               <CardTitle>Zusammenfassung</CardTitle>
             </CardHeader>
@@ -1150,21 +846,23 @@ export default function EditInvoicePage() {
                   />
                 )}
               </div>
-              <div className="pt-4 border-t border-border space-y-2">
+              <div className="pt-4 border-t border-border/60 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Nettobetrag:</span>
-                  <span>{formatCurrency(calc.netAmount)}</span>
+                  <span className="tabular-nums">{formatCurrency(calc.netAmount)}</span>
                 </div>
                 {vatPercent > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Umsatzsteuer:</span>
-                    <span>+{formatCurrency(calc.vatAmount)}</span>
+                    <span className="tabular-nums">+{formatCurrency(calc.vatAmount)}</span>
                   </div>
                 )}
-                <div className="pt-2 border-t border-border" />
+                <div className="pt-2 border-t border-border/60" />
                 <div className="flex justify-between text-lg font-bold">
                   <span>Rechnungsbetrag:</span>
-                  <span className="text-primary">{formatCurrency(calc.totalAmount)}</span>
+                  <span className="text-primary tabular-nums">
+                    {formatCurrency(calc.totalAmount)}
+                  </span>
                 </div>
               </div>
             </CardContent>

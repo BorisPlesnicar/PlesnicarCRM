@@ -191,6 +191,26 @@ const s = StyleSheet.create({
   colUst: { width: "8%", textAlign: "center" },
   colRabatt: { width: "10%", textAlign: "right" },
   colGesamt: { width: "19%", textAlign: "right", fontWeight: "bold" },
+  // Abschnittstext zwischen Tabellenzeilen – 1:1 wie Rechnung
+  bauInlineTextBlock: {
+    width: "100%",
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    backgroundColor: "#fafafa",
+    borderLeftWidth: 3,
+    borderLeftColor: RED,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "#ececec",
+    borderBottomColor: "#ececec",
+  },
+  bauInlineTextBlockContent: {
+    fontSize: 9,
+    lineHeight: 1.5,
+    color: "#333",
+  },
   totalsWrap: {
     position: "relative",
   },
@@ -283,6 +303,7 @@ interface TableRowLike {
   vat_percent: number;
   discount_percent: number;
   total: number;
+  row_kind?: "position" | "text_block";
 }
 
 function buildOfferTableRows(
@@ -296,6 +317,19 @@ function buildOfferTableRows(
   const isBau = offer.offer_type === "bau";
 
   items.forEach((item) => {
+    if (item.row_kind === "text_block") {
+      rows.push({
+        description: item.service_name ?? "",
+        quantity: 0,
+        unit: "",
+        unit_price: 0,
+        vat_percent: 0,
+        discount_percent: 0,
+        total: 0,
+        row_kind: "text_block",
+      });
+      return;
+    }
     if (isBau) {
       const d = item.discount_percent ?? 0;
       const net = Number(item.net_total ?? 0);
@@ -466,8 +500,8 @@ export function OfferDocument({
           <Text style={s.recipientAddress}>{client?.address || ""}</Text>
         </View>
 
-        {/* BAU: Text oberhalb der Leistungen (wie Rechnung intro_text) */}
-        {offer.offer_type === "bau" && offer.project_scope_short?.trim() && (
+        {/* Text oberhalb der Leistungen (IT + BAU, wie Rechnung intro_text) */}
+        {offer.project_scope_short?.trim() && (
           <View style={{ marginBottom: 14 }}>
             <Text style={{ fontSize: 9, lineHeight: 1.5, color: "#333" }}>
               {offer.project_scope_short.trim()}
@@ -486,21 +520,43 @@ export function OfferDocument({
             <Text style={[s.tableHeaderText, s.colRabatt]}>Rabatt</Text>
             <Text style={[s.tableHeaderText, s.colGesamt]}>Gesamt</Text>
           </View>
-          {tableRows.map((row, index) => (
-            <View key={index} style={index % 2 === 0 ? s.tableRow : s.tableRowAlt}>
-              <Text style={[s.tableCell, s.colBezeichnung]}>{row.description}</Text>
-              <Text style={[s.tableCell, s.colAnzahl]}>{formatNumberDE(row.quantity, 2)}</Text>
-              <Text style={[s.tableCell, s.colEinheit]}>{row.unit}</Text>
-              <Text style={[s.tableCell, s.colEinheitspreis]}>
-                € {formatNumberDE(row.unit_price, 2)}
-              </Text>
-              <Text style={[s.tableCell, s.colUst]}>{row.vat_percent.toFixed(0)}%</Text>
-              <Text style={[s.tableCell, s.colRabatt]}>
-                {row.discount_percent > 0 ? `${formatNumberDE(row.discount_percent, 2)}%` : "0,00%"}
-              </Text>
-              <Text style={[s.tableCell, s.colGesamt]}>{formatNumberDE(row.total, 2)} €</Text>
-            </View>
-          ))}
+          {tableRows.map((row, index) => {
+            if (row.row_kind === "text_block") {
+              const lines = row.description.split(/\r?\n/);
+              return (
+                <View key={index} style={s.bauInlineTextBlock} wrap={false}>
+                  {lines.map((line, li) => (
+                    <Text
+                      key={li}
+                      style={[
+                        s.bauInlineTextBlockContent,
+                        li < lines.length - 1 ? { marginBottom: 3 } : {},
+                      ]}
+                    >
+                      {line.length ? line : " "}
+                    </Text>
+                  ))}
+                </View>
+              );
+            }
+            return (
+              <View key={index} style={index % 2 === 0 ? s.tableRow : s.tableRowAlt}>
+                <Text style={[s.tableCell, s.colBezeichnung]}>{row.description}</Text>
+                <Text style={[s.tableCell, s.colAnzahl]}>{formatNumberDE(row.quantity, 2)}</Text>
+                <Text style={[s.tableCell, s.colEinheit]}>{row.unit}</Text>
+                <Text style={[s.tableCell, s.colEinheitspreis]}>
+                  € {formatNumberDE(row.unit_price, 2)}
+                </Text>
+                <Text style={[s.tableCell, s.colUst]}>{row.vat_percent.toFixed(0)}%</Text>
+                <Text style={[s.tableCell, s.colRabatt]}>
+                  {row.discount_percent > 0
+                    ? `${formatNumberDE(row.discount_percent, 2)}%`
+                    : "0,00%"}
+                </Text>
+                <Text style={[s.tableCell, s.colGesamt]}>{formatNumberDE(row.total, 2)} €</Text>
+              </View>
+            );
+          })}
         </View>
 
         {/* Summen – wie Rechnung */}

@@ -1,5 +1,5 @@
-/** UID-Nr. (z. B. ATU12345678) — leer lassen, bis vom Finanzamt erteilt. */
-export const COMPANY_UID = "";
+/** UID-Nr. (Umsatzsteuer-Identifikationsnummer). */
+export const COMPANY_UID = "ATU83447003";
 
 export const COMPANY_COURT_LOCATION = "3500 Krems a.d. Donau";
 

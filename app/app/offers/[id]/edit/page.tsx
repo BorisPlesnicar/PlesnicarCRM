@@ -14,21 +14,27 @@ import {
   PACKAGE_PRESETS,
 } from "@/lib/types";
 import { calculateOffer, formatCurrency } from "@/lib/calculations";
-import { bauLineTotal } from "@/lib/bau-invoice-rows";
+import { nextRowId } from "@/lib/bau-invoice-rows";
 import {
   type BauFormRow,
   defaultBauPositionRow,
-  offerItemsToBauFormRows,
-  buildBauOfferItemInserts,
+  offerItemsToFormRows,
+  buildOfferItemInserts,
+  insertOfferItems,
   bauFormRowsToOfferCalcLineItems,
+  offerRowsHaveBillablePosition,
 } from "@/lib/bau-offer-rows";
+import {
+  DocumentLineEditor,
+  IntroTextCard,
+  parseDecimalInput,
+} from "@/components/documents/document-line-editor";
+import { OfferItModules, type ItModuleState } from "@/components/offers/offer-it-modules";
+import { OfferAddonsEditor, type AddonFormRow } from "@/components/offers/offer-addons-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -38,15 +44,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
-import {
-  Loader2,
-  ArrowLeft,
-  Calculator,
-  Save,
-  Plus,
-  Trash2,
-} from "lucide-react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Loader2, ArrowLeft, Save } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function EditOfferPage() {
   const params = useParams();
@@ -55,17 +54,12 @@ export default function EditOfferPage() {
   const supabase = createClient();
   const offerId = params.id as string;
 
-  if (!authLoading && !canWrite) {
-    router.replace(`/app/offers/${offerId}`);
-    return null;
-  }
-
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Form state
+  // Stammdaten
   const [clientId, setClientId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [offerNumber, setOfferNumber] = useState("");
@@ -75,76 +69,64 @@ export default function EditOfferPage() {
   const [consultantPhone, setConsultantPhone] = useState("");
   const [status, setStatus] = useState<string>("draft");
   const [offerType, setOfferType] = useState<"it" | "bau">("it");
-  const [packagePreset, setPackagePreset] = useState<string>("");
-  const [projectScopeShort, setProjectScopeShort] = useState("");
+  const [introText, setIntroText] = useState("");
   const [projectScope, setProjectScope] = useState("");
 
-  // IT Line items – dynamisch wie Rechnung (add/remove)
-  const [items, setItems] = useState<OfferItem[]>([
-    { position: 1, service_name: "", hours: 0, hourly_rate: 55, discount_percent: 0, net_total: 0 },
-  ]);
+  // Positionen – gleiche Struktur wie Rechnung
+  const [rows, setRows] = useState<BauFormRow[]>([defaultBauPositionRow(nextRowId(), "Std.")]);
 
-  // BAU Line items – gleiche Datenstruktur wie Rechnung BAU (BauFormRow)
-  const [bauItems, setBauItems] = useState<BauFormRow[]>([defaultBauPositionRow("1")]);
-
-  // Global controls
+  // Kalkulation
   const [globalDiscount, setGlobalDiscount] = useState(0);
-  const [expressEnabled, setExpressEnabled] = useState(false);
-  const [expressSurcharge, setExpressSurcharge] = useState(20);
-  const [hostingEnabled, setHostingEnabled] = useState(false);
-  const [hostingFee, setHostingFee] = useState(150);
-  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
-  const [maintenanceMonths, setMaintenanceMonths] = useState(12);
-  const [maintenanceMonthly, setMaintenanceMonthly] = useState(49);
   const [vatPercent, setVatPercent] = useState(0);
-  const [addons, setAddons] = useState<
-    Array<{ id: string; title: string; description: string; price: number }>
-  >([]);
+  const [addons, setAddons] = useState<AddonFormRow[]>([]);
 
-  const bauItemsAsOfferItems = useMemo(() => bauFormRowsToOfferCalcLineItems(bauItems), [bauItems]);
+  // IT-Module
+  const [itModules, setItModules] = useState<ItModuleState>({
+    packagePreset: "",
+    expressEnabled: false,
+    expressSurcharge: 20,
+    hostingEnabled: false,
+    hostingFee: 150,
+    maintenanceEnabled: false,
+    maintenanceMonths: 12,
+    maintenanceMonthly: 49,
+  });
 
-  // Calculations
-  const calc = useMemo(() => {
-    const itemsToUse = offerType === "it" ? items : bauItemsAsOfferItems;
-    return calculateOffer(
-      itemsToUse,
-      globalDiscount,
-      expressEnabled,
-      expressSurcharge,
-      hostingEnabled,
-      hostingFee,
-      maintenanceEnabled,
-      maintenanceMonths,
-      maintenanceMonthly,
-      vatPercent
-    );
-  }, [
-    offerType,
-    items,
-    bauItemsAsOfferItems,
-    globalDiscount,
-    expressEnabled,
-    expressSurcharge,
-    hostingEnabled,
-    hostingFee,
-    maintenanceEnabled,
-    maintenanceMonths,
-    maintenanceMonthly,
-    vatPercent,
-  ]);
+  const isIt = offerType === "it";
+  const defaultUnit = isIt ? "Std." : "Stk";
+
+  const calcLineItems = useMemo(() => bauFormRowsToOfferCalcLineItems(rows), [rows]);
+
+  const calc = useMemo(
+    () =>
+      calculateOffer(
+        calcLineItems,
+        globalDiscount,
+        itModules.expressEnabled,
+        itModules.expressSurcharge,
+        itModules.hostingEnabled,
+        itModules.hostingFee,
+        itModules.maintenanceEnabled,
+        itModules.maintenanceMonths,
+        itModules.maintenanceMonthly,
+        vatPercent
+      ),
+    [calcLineItems, globalDiscount, itModules, vatPercent]
+  );
+
+  const addonsSum = useMemo(
+    () => addons.reduce((s, a) => s + (Number(a.price) || 0), 0),
+    [addons]
+  );
+  const totalWithAddons = calc.total + addonsSum;
 
   useEffect(() => {
     async function load() {
-      // Load clients and projects
       const [clientsRes, projectsRes, offerRes, itemsRes, addonsRes] = await Promise.all([
         supabase.from("clients").select("*").order("name"),
         supabase.from("projects").select("*").order("title"),
         supabase.from("offers").select("*").eq("id", offerId).single(),
-        supabase
-          .from("offer_items")
-          .select("*")
-          .eq("offer_id", offerId)
-          .order("position"),
+        supabase.from("offer_items").select("*").eq("offer_id", offerId).order("position"),
         supabase.from("offer_addons").select("*").eq("offer_id", offerId),
       ]);
 
@@ -158,8 +140,8 @@ export default function EditOfferPage() {
       }
 
       const offer = offerRes.data as Offer;
+      const loadedType = (offer.offer_type as "it" | "bau") || "it";
 
-      // Populate form with existing data
       setClientId(offer.client_id);
       setProjectId(offer.project_id || "");
       setOfferNumber(offer.offer_number);
@@ -169,22 +151,25 @@ export default function EditOfferPage() {
       setConsultantPhone(offer.consultant_phone || "");
       setStatus(offer.status);
       setGlobalDiscount(offer.global_discount_percent);
-      setExpressEnabled(offer.express_enabled);
-      setExpressSurcharge(offer.express_surcharge_percent);
-      setHostingEnabled(offer.hosting_setup_enabled);
-      setHostingFee(offer.hosting_setup_fee);
-      setMaintenanceEnabled(offer.maintenance_enabled);
-      setMaintenanceMonths(offer.maintenance_months);
-      setMaintenanceMonthly(offer.maintenance_monthly_fee);
       setVatPercent(offer.vat_percent);
-      setOfferType((offer.offer_type as "it" | "bau") || "it");
-      setProjectScopeShort(offer.project_scope_short || "");
+      setOfferType(loadedType);
+      setIntroText(offer.project_scope_short || "");
       setProjectScope(offer.project_scope || "");
+      setItModules({
+        packagePreset: "",
+        expressEnabled: offer.express_enabled,
+        expressSurcharge: offer.express_surcharge_percent,
+        hostingEnabled: offer.hosting_setup_enabled,
+        hostingFee: offer.hosting_setup_fee,
+        maintenanceEnabled: offer.maintenance_enabled,
+        maintenanceMonths: offer.maintenance_months,
+        maintenanceMonthly: offer.maintenance_monthly_fee,
+      });
 
       if (addonsRes.data && addonsRes.data.length > 0) {
         setAddons(
-          addonsRes.data.map((a: OfferAddon & { id: string }) => ({
-            id: a.id || `addon-${Date.now()}`,
+          addonsRes.data.map((a: OfferAddon & { id: string }, idx: number) => ({
+            id: a.id || `addon-${idx}`,
             title: a.title || "",
             description: a.description || "",
             price: Number(a.price) || 0,
@@ -192,29 +177,12 @@ export default function EditOfferPage() {
         );
       }
 
-      // Load existing items
-      if (itemsRes.data && itemsRes.data.length > 0) {
-        const offerTypeFromData = (offer.offer_type as "it" | "bau") || "it";
-
-        if (offerTypeFromData === "bau") {
-          setBauItems(offerItemsToBauFormRows(itemsRes.data as OfferItem[]));
-        } else {
-          // IT items – 1:1 wie Rechnung: dynamische Liste, keine festen SERVICE_NAMES
-          const existingItems = itemsRes.data.map((item: any) => ({
-            position: item.position,
-            service_name: item.service_name,
-            hours: item.hours,
-            hourly_rate: item.hourly_rate,
-            discount_percent: item.discount_percent,
-            net_total: item.net_total,
-          }));
-          setItems(
-            existingItems.length > 0
-              ? existingItems
-              : [{ position: 1, service_name: "", hours: 0, hourly_rate: 55, discount_percent: 0, net_total: 0 }]
-          );
-        }
-      }
+      const loadedItems = (itemsRes.data || []) as OfferItem[];
+      setRows(
+        loadedItems.length > 0
+          ? offerItemsToFormRows(loadedItems, loadedType)
+          : [defaultBauPositionRow(nextRowId(), loadedType === "bau" ? "Stk" : "Std.")]
+      );
 
       setLoading(false);
     }
@@ -222,111 +190,24 @@ export default function EditOfferPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offerId]);
 
-  // Dezimalzahl aus Eingabe (Komma oder Punkt), verhindert Bug bei "22,38"
-  function parseDecimal(val: string | undefined, fallback: number): number {
-    if (val === undefined || val === null || val === "") return fallback;
-    const s = String(val).trim().replace(",", ".");
-    const n = parseFloat(s);
-    return Number.isNaN(n) ? fallback : n;
-  }
-
-  function updateItem(index: number, field: keyof OfferItem, value: number | string) {
-    setItems((prev) =>
-      prev.map((item, i) => {
-        if (i !== index) return item;
-        const updated = { ...item, [field]: value };
-        const hours = updated.hours || 0;
-        const rate = updated.hourly_rate || 0;
-        updated.net_total = hours * rate * (1 - updated.discount_percent / 100);
-        return updated;
-      })
-    );
-  }
-
-  // IT – Position hinzufügen/entfernen wie Rechnung
-  function addItem() {
-    setItems((prev) => [
-      ...prev,
-      {
-        position: prev.length + 1,
-        service_name: "",
-        hours: 0,
-        hourly_rate: 55,
-        discount_percent: 0,
-        net_total: 0,
-      },
-    ]);
-  }
-
-  function removeItem(index: number) {
-    setItems((prev) =>
-      prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, position: i + 1 }))
-    );
-  }
-
   function applyPackagePreset(presetKey: string) {
     const preset = PACKAGE_PRESETS[presetKey];
     if (!preset) return;
-    const rate = items[0]?.hourly_rate ?? 55;
-    setItems(
+    const firstPosition = rows.find((r) => r.kind === "position");
+    const rate =
+      firstPosition && firstPosition.kind === "position" && firstPosition.price > 0
+        ? firstPosition.price
+        : 55;
+    setRows(
       SERVICE_NAMES.map((name, i) => ({
-        position: i + 1,
-        service_name: name,
-        hours: preset.hours[i] ?? 0,
-        hourly_rate: rate,
+        id: nextRowId(),
+        kind: "position" as const,
+        description: name,
+        quantity: preset.hours[i] ?? 0,
+        unit: "Std.",
+        price: rate,
         discount_percent: 0,
-        net_total: (preset.hours[i] ?? 0) * rate,
       }))
-    );
-  }
-
-  // BAU functions – 1:1 wie Rechnung (Anzahl, Einheit, Preis)
-  function addBauItem() {
-    setBauItems((prev) => [...prev, defaultBauPositionRow(Date.now().toString())]);
-  }
-
-  function removeBauItem(id: string) {
-    setBauItems((prev) => {
-      const next = prev.filter((item) => item.id !== id);
-      if (next.length === 0) return [defaultBauPositionRow("1")];
-      return next;
-    });
-  }
-
-  function updateBauItem(
-    id: string,
-    field: "description" | "quantity" | "unit" | "price" | "discount_percent",
-    value: string | number
-  ) {
-    setBauItems((prev) =>
-      prev.map((item) =>
-        item.id === id && item.kind === "position" ? { ...item, [field]: value } : item
-      )
-    );
-  }
-
-  const addonsSum = useMemo(
-    () => addons.reduce((s, a) => s + (Number(a.price) || 0), 0),
-    [addons]
-  );
-  const totalWithAddons = calc.total + addonsSum;
-
-  function addAddon() {
-    setAddons((prev) => [
-      ...prev,
-      { id: Date.now().toString(), title: "", description: "", price: 0 },
-    ]);
-  }
-  function removeAddon(id: string) {
-    setAddons((prev) => prev.filter((a) => a.id !== id));
-  }
-  function updateAddon(
-    id: string,
-    field: "title" | "description" | "price",
-    value: string | number
-  ) {
-    setAddons((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, [field]: value } : a))
     );
   }
 
@@ -339,10 +220,13 @@ export default function EditOfferPage() {
       toast.error("Angebotsnummer erforderlich");
       return;
     }
+    if (!offerRowsHaveBillablePosition(rows)) {
+      toast.error("Bitte fügen Sie mindestens eine Position mit Beschreibung und Preis hinzu");
+      return;
+    }
 
     setSaving(true);
 
-    // Update offer
     const { error: offerError } = await supabase
       .from("offers")
       .update({
@@ -356,14 +240,14 @@ export default function EditOfferPage() {
         hourly_rate: 55,
         global_discount_percent: globalDiscount,
         vat_percent: vatPercent,
-        express_enabled: expressEnabled,
-        express_surcharge_percent: expressSurcharge,
-        hosting_setup_enabled: hostingEnabled,
-        hosting_setup_fee: hostingFee,
-        maintenance_enabled: maintenanceEnabled,
-        maintenance_months: maintenanceMonths,
-        maintenance_monthly_fee: maintenanceMonthly,
-        project_scope_short: projectScopeShort || null,
+        express_enabled: itModules.expressEnabled,
+        express_surcharge_percent: itModules.expressSurcharge,
+        hosting_setup_enabled: itModules.hostingEnabled,
+        hosting_setup_fee: itModules.hostingFee,
+        maintenance_enabled: itModules.maintenanceEnabled,
+        maintenance_months: itModules.maintenanceMonths,
+        maintenance_monthly_fee: itModules.maintenanceMonthly,
+        project_scope_short: introText.trim() || null,
         project_scope: projectScope || null,
         project_scope_images: null,
         total: totalWithAddons,
@@ -378,44 +262,19 @@ export default function EditOfferPage() {
       return;
     }
 
-    // Delete existing items
     await supabase.from("offer_items").delete().eq("offer_id", offerId);
 
-    // Insert updated items - ONLY items of the current offer type
-    let itemsToInsert: any[] = [];
-    if (offerType === "it") {
-      itemsToInsert = items
-        .filter((item) => (item.hours || 0) > 0)
-        .map((item) => {
-          const h = item.hours ?? 0;
-          const r = item.hourly_rate ?? 55;
-          const d = item.discount_percent;
-          return {
-            offer_id: offerId,
-            position: item.position,
-            service_name: item.service_name,
-            hours: h,
-            hourly_rate: r,
-            discount_percent: d,
-            net_total: h * r * (1 - d / 100),
-            quantity: h,
-            unit: "Std.",
-            unit_price: r,
-          };
-        });
-    } else {
-      itemsToInsert = buildBauOfferItemInserts(offerId, bauItems);
+    const itemRows = buildOfferItemInserts(offerId, rows, offerType);
+    const itemsRes = await insertOfferItems(supabase, itemRows);
+    if (itemsRes.error) {
+      toast.error("Fehler bei Positionen", { description: itemsRes.error.message });
+      setSaving(false);
+      return;
     }
-
-    if (itemsToInsert.length > 0) {
-      const { error: itemsError } = await supabase
-        .from("offer_items")
-        .insert(itemsToInsert);
-      if (itemsError) {
-        toast.error("Fehler bei Positionen", { description: itemsError.message });
-        setSaving(false);
-        return;
-      }
+    if (itemsRes.textBlocksSkipped) {
+      toast.warning("Abschnittstexte nicht gespeichert", {
+        description: "Migration 037_offer_items_row_kind.sql fehlt noch in der Datenbank.",
+      });
     }
 
     await supabase.from("offer_addons").delete().eq("offer_id", offerId);
@@ -428,9 +287,7 @@ export default function EditOfferPage() {
         price: Number(a.price) || 0,
       }));
     if (addonsToInsert.length > 0) {
-      const { error: addonsError } = await supabase
-        .from("offer_addons")
-        .insert(addonsToInsert);
+      const { error: addonsError } = await supabase.from("offer_addons").insert(addonsToInsert);
       if (addonsError) {
         toast.error("Fehler bei weiteren Positionen", { description: addonsError.message });
         setSaving(false);
@@ -448,7 +305,7 @@ export default function EditOfferPage() {
       ? projects.filter((p) => p.client_id === clientId)
       : projects;
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -456,25 +313,25 @@ export default function EditOfferPage() {
     );
   }
 
+  if (!canWrite) {
+    router.replace(`/app/offers/${offerId}`);
+    return null;
+  }
+
   return (
     <div className="space-y-6 pb-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            onClick={() => router.push(`/app/offers/${offerId}`)}
-          >
+          <Button variant="ghost" onClick={() => router.push(`/app/offers/${offerId}`)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Zurück
           </Button>
-          <h1 className="text-2xl font-bold text-foreground">
-            Angebot bearbeiten
-          </h1>
+          <h1 className="text-2xl font-bold text-foreground">Angebot bearbeiten</h1>
         </div>
         <Button
           onClick={handleSave}
           disabled={saving}
-          className="bg-primary text-primary-foreground hover:bg-red-700"
+          className="bg-primary text-primary-foreground hover:bg-red-700 rounded-xl"
         >
           {saving ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -485,13 +342,16 @@ export default function EditOfferPage() {
         </Button>
       </div>
 
-      {/* Offer Type Tabs – wie Rechnung */}
-      <Card className="border-border bg-card">
+      <Card className="border-border/60 bg-card/60 backdrop-blur-xl rounded-2xl">
         <CardContent className="pt-6">
           <Tabs value={offerType} onValueChange={(v) => setOfferType(v as "it" | "bau")}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="it">IT Angebot</TabsTrigger>
-              <TabsTrigger value="bau">BAU Angebot</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 rounded-xl">
+              <TabsTrigger value="it" className="rounded-lg">
+                IT Angebot
+              </TabsTrigger>
+              <TabsTrigger value="bau" className="rounded-lg">
+                BAU Angebot
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </CardContent>
@@ -499,8 +359,7 @@ export default function EditOfferPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
-          {/* Angebotsinformationen – 1:1 wie Rechnungsinformationen (nur Angebot-Felder) */}
-          <Card className="border-border bg-card">
+          <Card className="border-border/60 bg-card/60 backdrop-blur-xl rounded-2xl">
             <CardHeader>
               <CardTitle>Angebotsinformationen</CardTitle>
             </CardHeader>
@@ -550,7 +409,11 @@ export default function EditOfferPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Gültig bis</Label>
-                  <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={validUntil}
+                    onChange={(e) => setValidUntil(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Status</Label>
@@ -561,7 +424,13 @@ export default function EditOfferPage() {
                     <SelectContent>
                       {OFFER_STATUSES.map((s) => (
                         <SelectItem key={s} value={s}>
-                          {s === "draft" ? "Entwurf" : s === "sent" ? "Gesendet" : s === "accepted" ? "Angenommen" : "Abgelehnt"}
+                          {s === "draft"
+                            ? "Entwurf"
+                            : s === "sent"
+                              ? "Gesendet"
+                              : s === "accepted"
+                                ? "Angenommen"
+                                : "Abgelehnt"}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -571,452 +440,140 @@ export default function EditOfferPage() {
             </CardContent>
           </Card>
 
-          {/* Positionen – 1:1 wie Rechnung: Kartenzeilen mit Bezeichnung, Anzahl, Einheit, Einheitspreis, Rabatt %, Gesamt */}
-          <Tabs value={offerType} onValueChange={(v) => setOfferType(v as "it" | "bau")}>
-            <TabsContent value="it" className="space-y-0">
-              <Card className="border-border bg-card mb-4">
-                <CardHeader>
-                  <CardTitle className="text-base">Paket-Vorgabe (IT)</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Wählen Sie ein Paket, um Positionen und Stunden vorzubelegen. Anschließend können Sie Werte anpassen.
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <Select
-                    value={packagePreset || "none"}
-                    onValueChange={(v) => {
-                      const key = v === "none" ? "" : v;
-                      setPackagePreset(key);
-                      if (key) applyPackagePreset(key);
-                    }}
-                  >
-                    <SelectTrigger className="max-w-xs">
-                      <SelectValue placeholder="Paket wählen (optional)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Manuell / ohne Vorgabe</SelectItem>
-                      {Object.entries(PACKAGE_PRESETS).map(([key, p]) => (
-                        <SelectItem key={key} value={key}>
-                          {p.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </CardContent>
-              </Card>
-              <Card className="border-border bg-card">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Calculator className="h-5 w-5" />
-                    Positionen
-                  </CardTitle>
-                  <Button variant="outline" size="sm" onClick={addItem}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Position hinzufügen
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {items.map((item, index) => (
-                    <div key={index} className="grid gap-4 sm:grid-cols-8 items-end p-4 border border-border rounded-lg">
-                      <div className="sm:col-span-3 space-y-2">
-                        <Label>Bezeichnung</Label>
-                        <Input
-                          value={item.service_name}
-                          onChange={(e) => updateItem(index, "service_name", e.target.value)}
-                          placeholder="z.B. Beratung & Konzept"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Anzahl</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.hours ?? ""}
-                          onChange={(e) => updateItem(index, "hours", parseDecimal(e.target.value, 0))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Einheit</Label>
-                        <Input
-                          value="Std."
-                          readOnly
-                          className="bg-muted"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Einheitspreis</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.hourly_rate ?? ""}
-                          onChange={(e) => updateItem(index, "hourly_rate", parseDecimal(e.target.value, 0))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Rabatt %</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={item.discount_percent ?? ""}
-                          onChange={(e) => updateItem(index, "discount_percent", parseDecimal(e.target.value, 0))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Gesamt</Label>
-                        <div className="font-semibold">{formatCurrency(item.net_total ?? 0)}</div>
-                      </div>
-                      <div>
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} className="text-red-400">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </TabsContent>
+          <IntroTextCard
+            value={introText}
+            onChange={setIntroText}
+            hint="Optionaler Einleitungstext, der auf dem Angebot über der Positionstabelle erscheint."
+          />
+          <DocumentLineEditor rows={rows} onRowsChange={setRows} defaultUnit={defaultUnit} />
 
-            <TabsContent value="bau" className="space-y-0">
-              <Card className="border-border bg-card mb-4">
-                <CardHeader>
-                  <CardTitle className="text-base">Text oberhalb der Leistungen</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Optionaler Einleitungstext, der auf dem BAU-Angebot über der Positionstabelle erscheint.
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <textarea
-                    value={projectScopeShort}
-                    onChange={(e) => setProjectScopeShort(e.target.value)}
-                    placeholder="z.B. Leistungen gemäß Auftrag vom … / Beschreibung des Bauvorhabens …"
-                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    rows={3}
-                  />
-                </CardContent>
-              </Card>
-              <Card className="border-border bg-card">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Calculator className="h-5 w-5" />
-                    Leistungen
-                  </CardTitle>
-                  <Button size="sm" onClick={addBauItem} className="bg-primary text-primary-foreground hover:bg-red-700">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Zeile hinzufügen
-                  </Button>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {bauItems.map((item, idx) => {
-                      if (item.kind !== "position") return null;
-                      return (
-                      <div key={item.id} className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50">
-                        <div className="flex-shrink-0 pt-2 text-sm text-muted-foreground w-8">{idx + 1}.</div>
-                        <div className="flex-1 space-y-2">
-                          <Input
-                            placeholder="Leistungsbeschreibung..."
-                            value={item.description}
-                            onChange={(e) => updateBauItem(item.id, "description", e.target.value)}
-                            className="bg-background"
-                          />
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <Input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              placeholder="Anzahl"
-                              value={item.quantity ?? ""}
-                              onChange={(e) => updateBauItem(item.id, "quantity", parseDecimal(e.target.value, 1))}
-                              className="bg-background w-24"
-                            />
-                            <Input
-                              placeholder="Einheit"
-                              value={item.unit}
-                              onChange={(e) => updateBauItem(item.id, "unit", e.target.value)}
-                              className="bg-background w-24"
-                            />
-                            <Input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              placeholder="Preis (€)"
-                              value={item.price ?? ""}
-                              onChange={(e) => updateBauItem(item.id, "price", parseDecimal(e.target.value, 0))}
-                              className="bg-background w-32"
-                            />
-                            <Input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step="0.01"
-                              placeholder="Rabatt %"
-                              value={item.discount_percent ?? ""}
-                              onChange={(e) => updateBauItem(item.id, "discount_percent", parseDecimal(e.target.value, 0))}
-                              className="bg-background w-24"
-                            />
-                            <span className="text-sm font-medium">
-                              = {formatCurrency(bauLineTotal(item.quantity, item.price, item.discount_percent ?? 0))}
-                            </span>
-                          </div>
-                        </div>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => removeBauItem(item.id)}
-                          className="flex-shrink-0 text-destructive hover:text-destructive"
-                          disabled={bauItems.length === 1}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+          <OfferAddonsEditor addons={addons} onChange={setAddons} />
 
-          {/* Weitere Positionen (werden an „Leistungen“ angehängt) */}
-      <Card className="border-border bg-card">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Weitere Positionen</span>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={addAddon}
-              className="border-border"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Position hinzufügen
-            </Button>
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Z. B. Marketing Plan – erscheinen in der Tabelle „Leistungen“ und in der Summe Positionen.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {addons.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">
-                Keine weiteren Positionen. Klicken Sie auf &quot;Position hinzufügen&quot; (z. B. Marketing Plan).
-              </p>
-            ) : (
-              addons.map((addon) => (
-                <div
-                  key={addon.id}
-                  className="flex gap-3 items-start p-3 rounded-lg border border-border bg-secondary/50"
-                >
-                  <div className="flex-1 grid gap-2 sm:grid-cols-2">
-                    <Input
-                      placeholder="Titel (z. B. Marketing Plan)"
-                      value={addon.title}
-                      onChange={(e) => updateAddon(addon.id, "title", e.target.value)}
-                      className="bg-background"
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      placeholder="Preis (€)"
-                      value={addon.price ? addon.price : ""}
-                      onChange={(e) =>
-                        updateAddon(addon.id, "price", parseDecimal(e.target.value, 0))
-                      }
-                      className="bg-background w-32"
-                    />
-                  </div>
-                  <Textarea
-                    placeholder="Beschreibung (optional)"
-                    value={addon.description}
-                    onChange={(e) => updateAddon(addon.id, "description", e.target.value)}
-                    className="min-h-[60px] resize-none bg-background flex-1"
-                    rows={2}
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => removeAddon(addon.id)}
-                    className="flex-shrink-0 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-          {addonsSum > 0 && (
-            <p className="text-sm font-medium mt-3">
-              Summe (diese Positionen): {formatCurrency(addonsSum)}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Global Controls */}
-      <Card className="border-border bg-card">
-        <CardHeader>
-          <CardTitle>Globale Einstellungen</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-2">
-              <Label>Globalrabatt (%)</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={globalDiscount || ""}
-                onChange={(e) => setGlobalDiscount(parseDecimal(e.target.value, 0))}
-                className="bg-secondary"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>MwSt. (%)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={vatPercent || ""}
-                onChange={(e) => setVatPercent(parseDecimal(e.target.value, 0))}
-                className="bg-secondary"
-              />
-            </div>
-          </div>
-
-          <Separator className="bg-border" />
-
-          {/* Express */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-base">Express-Zuschlag</Label>
-              <p className="text-sm text-muted-foreground">
-                Aufschlag für Eilaufträge
-              </p>
-            </div>
-            <Switch checked={expressEnabled} onCheckedChange={setExpressEnabled} />
-          </div>
-          {expressEnabled && (
-            <div className="space-y-2 ml-4">
-              <Label>Zuschlag (%)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={expressSurcharge || ""}
-                onChange={(e) =>
-                  setExpressSurcharge(parseDecimal(e.target.value, 0))
-                }
-                className="bg-secondary w-32"
-              />
-            </div>
-          )}
-
-          <Separator className="bg-border" />
-
-          {/* Hosting */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-base">Hosting-Setup</Label>
-              <p className="text-sm text-muted-foreground">
-                Einmalige Einrichtungsgebühr
-              </p>
-            </div>
-            <Switch checked={hostingEnabled} onCheckedChange={setHostingEnabled} />
-          </div>
-          {hostingEnabled && (
-            <div className="space-y-2 ml-4">
-              <Label>Setup-Gebühr (€)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={hostingFee || ""}
-                onChange={(e) => setHostingFee(parseDecimal(e.target.value, 0))}
-                className="bg-secondary w-32"
-              />
-            </div>
-          )}
-
-          <Separator className="bg-border" />
-
-          {/* Maintenance */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-base">Wartung & Support</Label>
-              <p className="text-sm text-muted-foreground">
-                Monatliche Wartungsgebühr
-              </p>
-            </div>
-            <Switch
-              checked={maintenanceEnabled}
-              onCheckedChange={setMaintenanceEnabled}
+          {isIt && (
+            <OfferItModules
+              state={itModules}
+              amounts={{
+                expressEur: calc.express_surcharge_eur,
+                hostingEur: calc.hosting_total,
+                maintenanceEur: calc.maintenance_total,
+              }}
+              onChange={(patch) => setItModules((prev) => ({ ...prev, ...patch }))}
+              onApplyPreset={applyPackagePreset}
             />
-          </div>
-          {maintenanceEnabled && (
-            <div className="grid gap-4 sm:grid-cols-2 ml-4">
-              <div className="space-y-2">
-                <Label>Monate</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={maintenanceMonths || ""}
-                  onChange={(e) =>
-                    setMaintenanceMonths(Math.max(0, Math.floor(parseDecimal(e.target.value, 0))))
-                  }
-                  className="bg-secondary"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Monatlich (€)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={maintenanceMonthly || ""}
-                  onChange={(e) =>
-                    setMaintenanceMonthly(parseDecimal(e.target.value, 0))
-                  }
-                  className="bg-secondary"
-                />
-              </div>
-            </div>
           )}
-        </CardContent>
-      </Card>
+
+          {isIt && (
+            <Card className="border-border/60 bg-card/60 backdrop-blur-xl rounded-2xl">
+              <CardHeader>
+                <CardTitle className="text-base">Projektumfang (intern / Angebotsdetail)</CardTitle>
+                <p className="text-sm text-muted-foreground font-normal">
+                  Ausführliche Beschreibung – erscheint im CRM auf der Angebotsseite, nicht in der
+                  PDF.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <textarea
+                  value={projectScope}
+                  onChange={(e) => setProjectScope(e.target.value)}
+                  rows={4}
+                  placeholder="Detaillierte Leistungsbeschreibung …"
+                  className="flex min-h-[100px] w-full rounded-xl border border-input bg-background/60 px-3 py-2 text-sm backdrop-blur-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        {/* Rechte Spalte – 1:1 wie Rechnung: Zusammenfassung */}
         <div className="space-y-6">
-          <Card className="border-border bg-card">
+          <Card className="border-border/60 bg-card/60 backdrop-blur-xl rounded-2xl lg:sticky lg:top-6">
             <CardHeader>
               <CardTitle>Zusammenfassung</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Umsatzsteuer %</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={vatPercent ?? ""}
-                  onChange={(e) => setVatPercent(parseDecimal(e.target.value, 0))}
-                />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Globalrabatt %</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={globalDiscount || ""}
+                    onChange={(e) => setGlobalDiscount(parseDecimalInput(e.target.value, 0))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Umsatzsteuer %</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={vatPercent ?? ""}
+                    onChange={(e) => setVatPercent(parseDecimalInput(e.target.value, 0))}
+                  />
+                </div>
               </div>
-              <div className="pt-4 border-t border-border space-y-2">
+              <div className="pt-4 border-t border-border/60 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Summe Positionen:</span>
+                  <span className="tabular-nums">
+                    {formatCurrency(calc.sum_positions + addonsSum)}
+                  </span>
+                </div>
+                {globalDiscount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Globalrabatt ({globalDiscount}%):</span>
+                    <span className="tabular-nums text-emerald-500">
+                      −{formatCurrency(calc.global_discount_eur)}
+                    </span>
+                  </div>
+                )}
+                {itModules.expressEnabled && calc.express_surcharge_eur > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Express-Zuschlag:</span>
+                    <span className="tabular-nums">
+                      +{formatCurrency(calc.express_surcharge_eur)}
+                    </span>
+                  </div>
+                )}
+                {itModules.hostingEnabled && calc.hosting_total > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Hosting-Setup:</span>
+                    <span className="tabular-nums">+{formatCurrency(calc.hosting_total)}</span>
+                  </div>
+                )}
+                {itModules.maintenanceEnabled && calc.maintenance_total > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Wartung ({itModules.maintenanceMonths} Mon.):
+                    </span>
+                    <span className="tabular-nums">+{formatCurrency(calc.maintenance_total)}</span>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-border/60" />
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Nettobetrag:</span>
-                  <span>{formatCurrency((calc.subtotal_before_vat ?? 0) + addonsSum)}</span>
+                  <span className="tabular-nums">
+                    {formatCurrency((calc.subtotal_before_vat ?? 0) + addonsSum)}
+                  </span>
                 </div>
                 {vatPercent > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Umsatzsteuer:</span>
-                    <span>+{formatCurrency(calc.vat_amount ?? 0)}</span>
+                    <span className="tabular-nums">+{formatCurrency(calc.vat_amount ?? 0)}</span>
                   </div>
                 )}
-                <div className="pt-2 border-t border-border" />
+                <div className="pt-2 border-t border-border/60" />
                 <div className="flex justify-between text-lg font-bold">
                   <span>Angebotsbetrag:</span>
-                  <span className="text-primary">{formatCurrency(totalWithAddons)}</span>
+                  <span className="text-primary tabular-nums">
+                    {formatCurrency(totalWithAddons)}
+                  </span>
                 </div>
+                {isIt && calc.total_hours > 0 && (
+                  <p className="pt-2 text-xs text-muted-foreground">
+                    {calc.total_hours} Std. · effektiv{" "}
+                    {formatCurrency(calc.effective_eur_per_hour)} / Std.
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
